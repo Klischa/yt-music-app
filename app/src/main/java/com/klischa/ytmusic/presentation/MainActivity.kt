@@ -5,8 +5,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -46,9 +44,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.klischa.ytmusic.data.auth.UserAccountManager
@@ -189,6 +189,16 @@ fun MainContent(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
+            // Прикрепленный фоновый YouTube Audio Player Engine (гарантирует воспроизведение звука)
+            AndroidView(
+                factory = { ctx ->
+                    playerViewModel.createAndAttachYouTubePlayer(ctx)
+                },
+                modifier = Modifier
+                    .size(1.dp)
+                    .alpha(0.01f)
+            )
+
             when (selectedTab) {
                 0 -> SearchScreen(searchViewModel = searchViewModel, playerViewModel = playerViewModel)
                 1 -> DownloadsScreen(libraryViewModel = libraryViewModel, playerViewModel = playerViewModel)

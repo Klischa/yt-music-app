@@ -21,8 +21,8 @@ class YouTubeAudioPlayerBridge(private val context: Context) {
 
     private val tag = "YTPlayerBridge"
 
-    private var youTubePlayerView: YouTubePlayerView? = null
     private var activeYouTubePlayer: YouTubePlayer? = null
+    private var pendingVideoId: String? = null
 
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
@@ -33,70 +33,75 @@ class YouTubeAudioPlayerBridge(private val context: Context) {
     private val _durationMs = MutableStateFlow(0L)
     val durationMs: StateFlow<Long> = _durationMs.asStateFlow()
 
-    private var currentVideoId: String? = null
+    private val _isPlayerReady = MutableStateFlow(false)
+    val isPlayerReady: StateFlow<Boolean> = _isPlayerReady.asStateFlow()
 
-    init {
-        initPlayerView()
-    }
+    fun createAndBindPlayerView(activityContext: Context): YouTubePlayerView {
+        val playerView = YouTubePlayerView(activityContext).apply {
+            layoutParams = FrameLayout.LayoutParams(1, 1)
+            enableAutomaticInitialization = false
+        }
 
-    private fun initPlayerView() {
-        try {
-            val playerView = YouTubePlayerView(context).apply {
-                layoutParams = FrameLayout.LayoutParams(1, 1) // Фоновый аудиорежим
-                enableAutomaticInitialization = false
+        val options = IFramePlayerOptions.Builder()
+            .controls(0)
+            .rel(0)
+            .ivLoadPolicy(3)
+            .build()
+
+        playerView.initialize(object : AbstractYouTubePlayerListener() {
+            override fun onReady(youTubePlayer: YouTubePlayer) {
+                activeYouTubePlayer = youTubePlayer
+                _isPlayerReady.value = true
+                Log.i(tag, "YouTube IFrame Player успешно инициализирован и готов к работе")
+
+                pendingVideoId?.let {
+                    youTubePlayer.loadVideo(it, (_currentPositionMs.value / 1000f))
+                    pendingVideoId = null
+                }
             }
 
-            val options = IFramePlayerOptions.Builder()
-                .controls(0) // Отключаем UI плеера YouTube, используем наш Compose UI
-                .rel(0)
-                .ivLoadPolicy(3)
-                .build()
-
-            playerView.initialize(object : AbstractYouTubePlayerListener() {
-                override fun onReady(youTubePlayer: YouTubePlayer) {
-                    activeYouTubePlayer = youTubePlayer
-                    Log.i(tag, "YouTube IFrame Player готов к воспроизведению")
-                    currentVideoId?.let {
-                        youTubePlayer.loadVideo(it, (_currentPositionMs.value / 1000f))
+            override fun onStateChange(youTubePlayer: YouTubePlayer, state: PlayerConstants.PlayerState) {
+                when (state) {
+                    PlayerConstants.PlayerState.PLAYING -> {
+                        _isPlaying.value = true
+                        Log.i(tag, "Воспроизведение активно (PLAYING)")
                     }
-                }
-
-                override fun onStateChange(youTubePlayer: YouTubePlayer, state: PlayerConstants.PlayerState) {
-                    when (state) {
-                        PlayerConstants.PlayerState.PLAYING -> _isPlaying.value = true
-                        PlayerConstants.PlayerState.PAUSED, PlayerConstants.PlayerState.ENDED -> _isPlaying.value = false
-                        else -> {}
+                    PlayerConstants.PlayerState.PAUSED, PlayerConstants.PlayerState.ENDED -> {
+                        _isPlaying.value = false
                     }
+                    else -> {}
                 }
+            }
 
-                override fun onCurrentSecond(youTubePlayer: YouTubePlayer, second: Float) {
-                    _currentPositionMs.value = (second * 1000L).toLong()
-                }
+            override fun onCurrentSecond(youTubePlayer: YouTubePlayer, second: Float) {
+                _currentPositionMs.value = (second * 1000L).toLong()
+            }
 
-                override fun onVideoDuration(youTubePlayer: YouTubePlayer, duration: Float) {
+            override fun onVideoDuration(youTubePlayer: YouTubePlayer, duration: Float) {
+                if (duration > 0f) {
                     _durationMs.value = (duration * 1000L).toLong()
                 }
+            }
 
-                override fun onError(youTubePlayer: YouTubePlayer, error: PlayerConstants.PlayerError) {
-                    Log.e(tag, "Ошибка YouTube IFrame Player: $error")
-                }
-            }, options)
+            override fun onError(youTubePlayer: YouTubePlayer, error: PlayerConstants.PlayerError) {
+                Log.e(tag, "Ошибка в YouTube Player Engine: $error")
+                _isPlaying.value = false
+            }
+        }, options)
 
-            youTubePlayerView = playerView
-        } catch (e: Exception) {
-            Log.e(tag, "Ошибка инициализации YouTubeAudioPlayerBridge: ${e.message}", e)
-        }
+        return playerView
     }
 
     fun playVideo(videoId: String, startPositionMs: Long = 0L) {
-        currentVideoId = videoId
         val player = activeYouTubePlayer
         if (player != null) {
             player.loadVideo(videoId, (startPositionMs / 1000f))
             _isPlaying.value = true
-            Log.i(tag, "Запущено воспроизведение трека $videoId через YouTube Engine")
+            Log.i(tag, "Запущено воспроизведение трека $videoId")
         } else {
-            initPlayerView()
+            pendingVideoId = videoId
+            _currentPositionMs.value = startPositionMs
+            Log.i(tag, "Ожидание готовности YouTube Player для трека $videoId...")
         }
     }
 
@@ -124,9 +129,8 @@ class YouTubeAudioPlayerBridge(private val context: Context) {
     }
 
     fun release() {
-        youTubePlayerView?.release()
-        youTubePlayerView = null
         activeYouTubePlayer = null
         _isPlaying.value = false
+        _isPlayerReady.value = false
     }
 }

@@ -35,7 +35,7 @@ class InnerTubeRepositoryImpl(
     }
 
     override suspend fun getTrendingTracks(): Result<List<Track>> {
-        return search("Хиты популярная музыка 2026")
+        return search("Хиты популярная музыка")
     }
 
     private fun parseSearchJsonObject(root: JsonObject): List<Track> {
@@ -53,6 +53,7 @@ class InnerTubeRepositoryImpl(
                     var artist = "Исполнитель"
                     var album = ""
                     var videoId: String? = null
+                    var durationSec = 0L
 
                     if (flex != null && flex.size() > 0) {
                         val col0 = flex.get(0).asJsonObject
@@ -77,8 +78,13 @@ class InnerTubeRepositoryImpl(
                         val runs = textObj?.getAsJsonArray("runs")
                         if (runs != null && runs.size() > 0) {
                             artist = runs.get(0).asJsonObject.get("text")?.asString ?: "Исполнитель"
-                            if (runs.size() > 2) {
-                                album = runs.get(2).asJsonObject.get("text")?.asString ?: ""
+                            for (idx in 1 until runs.size()) {
+                                val runText = runs.get(idx).asJsonObject.get("text")?.asString ?: ""
+                                if (runText.matches(Regex("\\d+:\\d+"))) {
+                                    durationSec = parseDurationStringToSeconds(runText)
+                                } else if (runText.length > 2 && !runText.contains("•") && album.isEmpty()) {
+                                    album = runText
+                                }
                             }
                         }
                     }
@@ -103,6 +109,7 @@ class InnerTubeRepositoryImpl(
                                 title = title,
                                 artist = artist,
                                 album = album,
+                                durationSeconds = if (durationSec > 0) durationSec else 210L,
                                 thumbnailUrl = thumbUrl
                             )
                         )
@@ -121,5 +128,25 @@ class InnerTubeRepositoryImpl(
 
         recursiveExtract(root)
         return tracks.distinctBy { it.id }
+    }
+
+    private fun parseDurationStringToSeconds(timeStr: String): Long {
+        return try {
+            val parts = timeStr.split(":")
+            if (parts.size == 2) {
+                val m = parts[0].toLongOrNull() ?: 0L
+                val s = parts[1].toLongOrNull() ?: 0L
+                m * 60 + s
+            } else if (parts.size == 3) {
+                val h = parts[0].toLongOrNull() ?: 0L
+                val m = parts[1].toLongOrNull() ?: 0L
+                val s = parts[2].toLongOrNull() ?: 0L
+                h * 3600 + m * 60 + s
+            } else {
+                210L
+            }
+        } catch (e: Exception) {
+            210L
+        }
     }
 }
