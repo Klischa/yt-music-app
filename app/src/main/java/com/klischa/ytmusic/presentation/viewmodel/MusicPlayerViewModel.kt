@@ -2,6 +2,7 @@ package com.klischa.ytmusic.presentation.viewmodel
 
 import android.app.Application
 import android.content.ComponentName
+import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
@@ -105,19 +106,23 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _queue.value = newQueue
 
         viewModelScope.launch {
-            // Если трек уже локальный — играем напрямую
+            // Если трек уже скачан локально — играем напрямую из файла
             if (track.localUri != null) {
                 startPlaybackWithUri(track, track.localUri.toString())
                 return@launch
             }
 
-            // Иначе получаем стриминговый URL через InnerTube API
+            // Получаем аудиопоток через мульти-стратегический резолвер
             val streamResult = repository.getStreamInfo(track.id)
             val streamInfo = streamResult.getOrNull()
-            if (streamInfo != null) {
+
+            if (streamInfo != null && streamInfo.audioUrl.isNotEmpty() && streamInfo.audioUrl.startsWith("http")) {
                 val playableTrack = track.copy(streamUrl = streamInfo.audioUrl)
                 _currentTrack.value = playableTrack
                 startPlaybackWithUri(playableTrack, streamInfo.audioUrl)
+            } else {
+                val err = streamResult.exceptionOrNull()?.message ?: "Не удалось получить аудиопоток трека"
+                Toast.makeText(getApplication(), err, Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -184,7 +189,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun downloadTrack(track: Track) {
         viewModelScope.launch {
-            downloadManager.downloadTrack(track)
+            val result = downloadManager.downloadTrack(track)
+            result.onSuccess {
+                Toast.makeText(getApplication(), "Трек '${track.title}' сохранён в Music/MyYTMusic!", Toast.LENGTH_LONG).show()
+            }.onFailure { e ->
+                Toast.makeText(getApplication(), "Ошибка скачивания: ${e.message}", Toast.LENGTH_LONG).show()
+            }
         }
     }
 

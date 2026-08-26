@@ -12,7 +12,9 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
 import com.klischa.ytmusic.R
@@ -20,7 +22,7 @@ import com.klischa.ytmusic.presentation.MainActivity
 
 /**
  * Сервис фонового воспроизведения музыки на базе AndroidX Media3 (MediaLibraryService).
- * Обеспечивает воспроизведение при заблокированном экране, управление очередью и системное уведомление.
+ * Обеспечивает потоковое воспроизведение Google/YouTube Media, работу при выключенном экране и системные уведомления.
  */
 class PlaybackService : MediaLibraryService() {
 
@@ -39,15 +41,32 @@ class PlaybackService : MediaLibraryService() {
         super.onCreate()
         createNotificationChannel()
 
-        // 1. Инициализация ExoPlayer с аудиоатрибутами для музыки
+        // 1. Настройка сетевого источника данных с YouTube/Google заголовками
+        val httpDataSourceFactory = DefaultHttpDataSource.Factory()
+            .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36")
+            .setAllowCrossProtocolRedirects(true)
+            .setConnectTimeoutMs(20000)
+            .setReadTimeoutMs(25000)
+            .setDefaultRequestProperties(
+                mapOf(
+                    "Origin" to "https://music.youtube.com",
+                    "Referer" to "https://music.youtube.com/"
+                )
+            )
+
+        val mediaSourceFactory = DefaultMediaSourceFactory(this)
+            .setDataSourceFactory(httpDataSourceFactory)
+
+        // 2. Инициализация ExoPlayer
         val audioAttributes = AudioAttributes.Builder()
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
             .setUsage(C.USAGE_MEDIA)
             .build()
 
         val exoPlayer = ExoPlayer.Builder(this)
-            .setAudioAttributes(audioAttributes, true) // Управление фокусом аудио
-            .setHandleAudioBecomingNoisy(true) // Пауза при отключении наушников
+            .setMediaSourceFactory(mediaSourceFactory)
+            .setAudioAttributes(audioAttributes, true)
+            .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
 
@@ -63,7 +82,7 @@ class PlaybackService : MediaLibraryService() {
             }
         })
 
-        // 2. PendingIntent для открытия MainActivity при клике на уведомление
+        // 3. PendingIntent для открытия MainActivity при клике на уведомление
         val sessionActivityIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
@@ -74,14 +93,14 @@ class PlaybackService : MediaLibraryService() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        // 3. Создание MediaLibrarySession с колбэками
+        // 4. Создание MediaLibrarySession с колбэками
         val sessionCallback = MediaSessionCallback(this, exoPlayer)
 
         mediaLibrarySession = MediaLibrarySession.Builder(this, exoPlayer, sessionCallback)
             .setSessionActivity(sessionActivityPendingIntent)
             .build()
 
-        Log.i(tag, "PlaybackService успешно запущен и инициализирован")
+        Log.i(tag, "PlaybackService успешно запущен и готов к воспроизведению")
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? {

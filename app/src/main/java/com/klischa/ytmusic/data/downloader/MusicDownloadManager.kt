@@ -15,25 +15,29 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.IOException
+import java.util.concurrent.TimeUnit
 
 /**
- * Менеджер загрузки треков с проверкой свободного места и сохранением в MediaStore.
+ * Менеджер загрузки треков с проверкой свободного места, валидацией аудиопотока и сохранением в MediaStore.
  */
 class MusicDownloadManager(
     private val context: Context,
     private val repository: InnerTubeRepositoryImpl = InnerTubeRepositoryImpl()
 ) {
     private val tag = "MusicDownloadManager"
-    private val okHttpClient = OkHttpClient()
+    private val okHttpClient = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .followRedirects(true)
+        .followSslRedirects(true)
+        .build()
+
     private val mediaStoreSaver = MediaStoreSaver(context)
 
     private val _downloadStates = MutableStateFlow<Map<String, DownloadState>>(emptyMap())
     val downloadStates: StateFlow<Map<String, DownloadState>> = _downloadStates
 
-    /**
-     * Проверяет, достаточно ли свободного места на устройстве (в байтах).
-     */
-    fun hasEnoughStorageSpace(requiredBytes: Long = 50 * 1024 * 1024L): Boolean {
+    fun hasEnoughStorageSpace(requiredBytes: Long = 20 * 1024 * 1024L): Boolean {
         return try {
             val stat = StatFs(Environment.getExternalStorageDirectory().path)
             val availableBytes = stat.availableBlocksLong * stat.blockSizeLong
@@ -43,11 +47,7 @@ class MusicDownloadManager(
         }
     }
 
-    /**
-     * Запускает корутинную загрузку трека в MediaStore.
-     */
     suspend fun downloadTrack(track: Track): Result<Uri> = withContext(Dispatchers.IO) {
-        // 1. Проверка свободного места (минимум 20 МБ)
         if (!hasEnoughStorageSpace(20 * 1024 * 1024L)) {
             val error = "Недостаточно свободного места на диске для загрузки"
             updateState(track.id, DownloadState.Error(error))
@@ -57,29 +57,42 @@ class MusicDownloadManager(
         updateState(track.id, DownloadState.Downloading(0, 0, 0))
 
         try {
-            // 2. Получение ссылки на поток через InnerTube API
+            // 1. Получение прямой ссылки на аудиопоток
             val streamInfoResult = repository.getStreamInfo(track.id)
             val streamInfo = streamInfoResult.getOrNull()
-                ?: return@withContext Result.failure(Exception("Не удалось получить ссылку на поток"))
+                ?: return@withContext Result.failure(Exception("Не удалось получить аудиопоток трека"))
 
-            // 3. Создание записи в MediaStore (папка Music/MyYTMusic)
+            if (streamInfo.audioUrl.isEmpty() || !streamInfo.audioUrl.startsWith("http")) {
+                val err = "Некорректная ссылка на аудиопоток"
+                updateState(track.id, DownloadState.Error(err))
+                return@withContext Result.failure(IOException(err))
+            }
+
+            // 2. Создание записи в MediaStore
             val isMp4 = streamInfo.mimeType.contains("mp4") || streamInfo.mimeType.contains("m4a")
             val ext = if (isMp4) "m4a" else "webm"
             val entry = mediaStoreSaver.createAudioEntry(track, streamInfo.mimeType, ext)
-                ?: return@withContext Result.failure(IOException("Не удалось создать файл в MediaStore"))
+                ?: return@withContext Result.failure(IOException("Не удалось создать запись в MediaStore"))
 
             val (mediaStoreUri, outStream) = entry
 
-            // 4. Загрузка потока через OkHttp чанками
+            // 3. Скачивание аудиопотока
             val request = Request.Builder()
                 .url(streamInfo.audioUrl)
-                .header("User-Agent", "Mozilla/5.0 (Linux; Android 14)")
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36")
+                .header("Origin", "https://music.youtube.com")
+                .header("Referer", "https://music.youtube.com/")
                 .build()
 
             val response = okHttpClient.newCall(request).execute()
-            if (!response.isSuccessful) {
+            val contentType = response.header("Content-Type") ?: ""
+
+            if (!response.isSuccessful || contentType.contains("text/html")) {
                 outStream.close()
-                throw IOException("Ошибка скачивания: HTTP ${response.code}")
+                context.contentResolver.delete(mediaStoreUri, null, null)
+                val err = "Сервер вернул некорректный ответ (HTML вместо аудио)"
+                updateState(track.id, DownloadState.Error(err))
+                return@withContext Result.failure(IOException(err))
             }
 
             val body = response.body ?: throw IOException("Пустой ответ от сервера")
@@ -97,7 +110,7 @@ class MusicDownloadManager(
                         val progress = if (totalBytes > 0) {
                             ((downloadedBytes * 100) / totalBytes).toInt().coerceIn(0, 100)
                         } else {
-                            0
+                            50
                         }
                         updateState(track.id, DownloadState.Downloading(progress, downloadedBytes, totalBytes))
                     }
@@ -105,11 +118,18 @@ class MusicDownloadManager(
                 }
             }
 
-            // 5. Финализация записи в MediaStore
+            // Проверка минимального размера (полноценный трек весит минимум 500 КБ)
+            if (downloadedBytes < 200 * 1024L) {
+                context.contentResolver.delete(mediaStoreUri, null, null)
+                val err = "Загруженный файл повреждён или имеет слишком малый размер (${downloadedBytes / 1024} KB)"
+                updateState(track.id, DownloadState.Error(err))
+                return@withContext Result.failure(IOException(err))
+            }
+
             mediaStoreSaver.finishAudioEntry(mediaStoreUri)
             updateState(track.id, DownloadState.Completed(mediaStoreUri, mediaStoreUri.toString()))
 
-            Log.i(tag, "Трек '${track.title}' успешно загружен в Music/MyYTMusic")
+            Log.i(tag, "Трек '${track.title}' (${downloadedBytes / 1024} KB) успешно загружен в Music/MyYTMusic")
             Result.success(mediaStoreUri)
 
         } catch (e: Exception) {

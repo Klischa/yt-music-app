@@ -1,6 +1,5 @@
 package com.klischa.ytmusic.data.innertube
 
-import com.google.gson.JsonArray
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.klischa.ytmusic.domain.model.StreamInfo
@@ -10,7 +9,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 class InnerTubeRepositoryImpl(
-    private val api: InnerTubeApi = InnerTubeClient.api
+    private val api: InnerTubeApi = InnerTubeClient.api,
+    private val streamResolver: AudioStreamResolver = AudioStreamResolver()
 ) : MusicRepository {
 
     override suspend fun search(query: String): Result<List<Track>> = withContext(Dispatchers.IO) {
@@ -29,83 +29,7 @@ class InnerTubeRepositoryImpl(
     }
 
     override suspend fun getStreamInfo(videoId: String): Result<StreamInfo> = withContext(Dispatchers.IO) {
-        try {
-            val response = api.getPlayer(InnerTubePlayerRequest(videoId = videoId))
-            if (response.isSuccessful && response.body() != null) {
-                val body = response.body()!!
-                val streamingData = body.getAsJsonObject("streamingData")
-
-                if (streamingData != null) {
-                    val formatsList = mutableListOf<FormatItem>()
-
-                    fun extractFormats(array: JsonArray?) {
-                        array?.forEach { element ->
-                            if (element.isJsonObject) {
-                                val obj = element.asJsonObject
-                                val itag = obj.get("itag")?.asInt
-                                val url = obj.get("url")?.asString
-                                val mimeType = obj.get("mimeType")?.asString
-                                val bitrate = obj.get("bitrate")?.asInt
-                                val contentLength = obj.get("contentLength")?.asString
-                                val signatureCipher = obj.get("signatureCipher")?.asString
-                                val cipher = obj.get("cipher")?.asString
-
-                                formatsList.add(
-                                    FormatItem(
-                                        itag = itag,
-                                        url = url,
-                                        mimeType = mimeType,
-                                        bitrate = bitrate,
-                                        averageBitrate = bitrate,
-                                        contentLength = contentLength,
-                                        signatureCipher = signatureCipher,
-                                        cipher = cipher,
-                                        audioQuality = null,
-                                        approxDurationMs = null
-                                    )
-                                )
-                            }
-                        }
-                    }
-
-                    extractFormats(streamingData.getAsJsonArray("adaptiveFormats"))
-                    extractFormats(streamingData.getAsJsonArray("formats"))
-
-                    val audioFormats = formatsList
-                        .filter { it.mimeType?.startsWith("audio/") == true }
-                        .sortedByDescending { it.bitrate ?: 0 }
-
-                    val bestFormat = audioFormats.firstOrNull() ?: formatsList.firstOrNull()
-
-                    if (bestFormat != null) {
-                        val resolvedUrl = CipherDecipherer.resolveAudioStreamUrl(bestFormat)
-                        if (!resolvedUrl.isNullOrEmpty()) {
-                            return@withContext Result.success(
-                                StreamInfo(
-                                    videoId = videoId,
-                                    audioUrl = resolvedUrl,
-                                    bitrate = bestFormat.bitrate ?: 128000,
-                                    mimeType = bestFormat.mimeType ?: "audio/mp4",
-                                    contentLength = bestFormat.contentLength?.toLongOrNull() ?: 0L
-                                )
-                            )
-                        }
-                    }
-                }
-            }
-
-            Result.success(
-                StreamInfo(
-                    videoId = videoId,
-                    audioUrl = "https://music.youtube.com/watch?v=$videoId",
-                    bitrate = 128000,
-                    mimeType = "audio/mp4",
-                    contentLength = 0L
-                )
-            )
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
+        streamResolver.resolveAudioStream(videoId)
     }
 
     override suspend fun getTrendingTracks(): Result<List<Track>> {
