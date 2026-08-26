@@ -14,6 +14,7 @@ import com.google.common.util.concurrent.MoreExecutors
 import com.klischa.ytmusic.data.downloader.MusicDownloadManager
 import com.klischa.ytmusic.data.innertube.InnerTubeRepositoryImpl
 import com.klischa.ytmusic.data.service.PlaybackService
+import com.klischa.ytmusic.data.service.YouTubeAudioPlayerBridge
 import com.klischa.ytmusic.domain.model.DownloadState
 import com.klischa.ytmusic.domain.model.Track
 import kotlinx.coroutines.Job
@@ -28,6 +29,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private val repository = InnerTubeRepositoryImpl(application)
     private val downloadManager = MusicDownloadManager(application, repository)
+    private val youTubeBridge = YouTubeAudioPlayerBridge(application)
 
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var mediaController: MediaController? = null
@@ -52,10 +54,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     val downloadStates: StateFlow<Map<String, DownloadState>> = downloadManager.downloadStates
 
+    private var isPlayingLocalFile = false
     private var progressJob: Job? = null
 
     init {
         initMediaController()
+        observeYouTubeBridge()
     }
 
     private fun initMediaController() {
@@ -74,28 +78,46 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }, MoreExecutors.directExecutor())
     }
 
+    private fun observeYouTubeBridge() {
+        viewModelScope.launch {
+            youTubeBridge.isPlaying.collect { playing ->
+                if (!isPlayingLocalFile) {
+                    _isPlaying.value = playing
+                }
+            }
+        }
+        viewModelScope.launch {
+            youTubeBridge.currentPositionMs.collect { pos ->
+                if (!isPlayingLocalFile) {
+                    _currentPositionMs.value = pos
+                }
+            }
+        }
+        viewModelScope.launch {
+            youTubeBridge.durationMs.collect { dur ->
+                if (!isPlayingLocalFile && dur > 0) {
+                    _durationMs.value = dur
+                }
+            }
+        }
+    }
+
     private fun setupPlayerListener(controller: MediaController?) {
         controller?.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
-                _isPlaying.value = isPlaying
-                if (isPlaying) {
-                    startProgressTracking()
-                } else {
-                    stopProgressTracking()
+                if (isPlayingLocalFile) {
+                    _isPlaying.value = isPlaying
+                    if (isPlaying) {
+                        startProgressTracking()
+                    } else {
+                        stopProgressTracking()
+                    }
                 }
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
-                if (playbackState == Player.STATE_READY) {
+                if (isPlayingLocalFile && playbackState == Player.STATE_READY) {
                     _durationMs.value = controller.duration.coerceAtLeast(0L)
-                }
-            }
-
-            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                val mediaId = mediaItem?.mediaId
-                val track = _queue.value.find { it.id == mediaId }
-                if (track != null) {
-                    _currentTrack.value = track
                 }
             }
         })
@@ -105,63 +127,49 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _currentTrack.value = track
         _queue.value = newQueue
 
-        viewModelScope.launch {
-            // Если трек уже скачан локально — играем напрямую из файла
-            if (track.localUri != null) {
-                startPlaybackWithUri(track, track.localUri.toString())
-                return@launch
-            }
-
-            // Получаем аудиопоток через мульти-стратегический резолвер
-            val streamResult = repository.getStreamInfo(track.id)
-            val streamInfo = streamResult.getOrNull()
-
-            if (streamInfo != null && streamInfo.audioUrl.isNotEmpty() && streamInfo.audioUrl.startsWith("http")) {
-                val playableTrack = track.copy(streamUrl = streamInfo.audioUrl)
-                _currentTrack.value = playableTrack
-                startPlaybackWithUri(playableTrack, streamInfo.audioUrl)
-            } else {
-                val err = streamResult.exceptionOrNull()?.message ?: "Не удалось получить аудиопоток трека"
-                Toast.makeText(getApplication(), err, Toast.LENGTH_LONG).show()
-            }
+        // 1. Если трек уже скачан локально — играем через ExoPlayer
+        if (track.localUri != null) {
+            isPlayingLocalFile = true
+            youTubeBridge.pause()
+            startLocalPlayback(track)
+            return
         }
+
+        // 2. Для онлайн-треков запускаем воспроизведение через YouTube Player Engine
+        isPlayingLocalFile = false
+        mediaController?.pause()
+        youTubeBridge.playVideo(track.id)
+        _isPlaying.value = true
+        _durationMs.value = (track.durationSeconds * 1000L).coerceAtLeast(180_000L)
     }
 
-    private fun startPlaybackWithUri(track: Track, uriString: String) {
-        val playAction = { controller: MediaController ->
-            val mediaItem = track.toMediaItem().buildUpon()
-                .setUri(uriString)
-                .build()
-
-            controller.setMediaItem(mediaItem)
-            controller.prepare()
-            controller.play()
-        }
-
-        val controller = mediaController
-        if (controller != null) {
-            playAction(controller)
-        } else {
-            controllerFuture?.addListener({
-                try {
-                    val ctrl = controllerFuture?.get()
-                    ctrl?.let { playAction(it) }
-                } catch (ignored: Exception) {}
-            }, MoreExecutors.directExecutor())
-        }
+    private fun startLocalPlayback(track: Track) {
+        val controller = mediaController ?: return
+        val mediaItem = track.toMediaItem()
+        controller.setMediaItem(mediaItem)
+        controller.prepare()
+        controller.play()
     }
 
     fun togglePlayPause() {
-        val controller = mediaController ?: return
-        if (controller.isPlaying) {
-            controller.pause()
+        if (isPlayingLocalFile) {
+            val controller = mediaController ?: return
+            if (controller.isPlaying) {
+                controller.pause()
+            } else {
+                controller.play()
+            }
         } else {
-            controller.play()
+            youTubeBridge.togglePlayPause()
         }
     }
 
     fun seekTo(positionMs: Long) {
-        mediaController?.seekTo(positionMs)
+        if (isPlayingLocalFile) {
+            mediaController?.seekTo(positionMs)
+        } else {
+            youTubeBridge.seekTo(positionMs)
+        }
         _currentPositionMs.value = positionMs
     }
 
@@ -191,7 +199,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             val result = downloadManager.downloadTrack(track)
             result.onSuccess {
-                Toast.makeText(getApplication(), "Трек '${track.title}' сохранён в Music/MyYTMusic!", Toast.LENGTH_LONG).show()
+                Toast.makeText(getApplication(), "Трек '${track.title}' успешно сохранён в Music/MyYTMusic!", Toast.LENGTH_LONG).show()
             }.onFailure { e ->
                 Toast.makeText(getApplication(), "Ошибка скачивания: ${e.message}", Toast.LENGTH_LONG).show()
             }
@@ -220,6 +228,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         super.onCleared()
         controllerFuture?.let { MediaController.releaseFuture(it) }
         mediaController = null
+        youTubeBridge.release()
         stopProgressTracking()
     }
 }

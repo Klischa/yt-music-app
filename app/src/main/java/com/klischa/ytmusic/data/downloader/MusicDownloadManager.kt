@@ -18,7 +18,7 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 /**
- * Менеджер загрузки треков с проверкой свободного места, валидацией аудиопотока и сохранением в MediaStore.
+ * Менеджер загрузки треков с проверкой свободного места, валидацией типа контента и сохранением в MediaStore.
  */
 class MusicDownloadManager(
     private val context: Context,
@@ -90,7 +90,7 @@ class MusicDownloadManager(
             if (!response.isSuccessful || contentType.contains("text/html")) {
                 outStream.close()
                 context.contentResolver.delete(mediaStoreUri, null, null)
-                val err = "Сервер вернул некорректный ответ (HTML вместо аудио)"
+                val err = "Сервер вернул некорректный ответ (HTML вместо аудио). Пожалуйста, войдите в аккаунт через профиль 👤."
                 updateState(track.id, DownloadState.Error(err))
                 return@withContext Result.failure(IOException(err))
             }
@@ -118,7 +118,7 @@ class MusicDownloadManager(
                 }
             }
 
-            // Проверка минимального размера (полноценный трек весит минимум 500 КБ)
+            // Проверка минимального размера (полноценный трек весит минимум 300 КБ)
             if (downloadedBytes < 200 * 1024L) {
                 context.contentResolver.delete(mediaStoreUri, null, null)
                 val err = "Загруженный файл повреждён или имеет слишком малый размер (${downloadedBytes / 1024} KB)"
