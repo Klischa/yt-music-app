@@ -1,5 +1,6 @@
 package com.klischa.ytmusic.data.innertube
 
+import com.google.gson.JsonObject
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.Headers
@@ -9,23 +10,27 @@ interface InnerTubeApi {
 
     @Headers(
         "Content-Type: application/json",
-        "User-Agent: com.google.android.apps.youtube.music/6.42.52 (Linux; U; Android 14; ru_RU; Infinix X6833B)",
-        "X-YouTube-Client-Name: 21", // ANDROID_MUSIC
-        "X-YouTube-Client-Version: 6.42.52"
+        "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+        "Origin: https://music.youtube.com",
+        "Referer: https://music.youtube.com/",
+        "X-YouTube-Client-Name: 67",
+        "X-YouTube-Client-Version: 1.20240401.01.00"
     )
     @POST("youtubei/v1/search")
     suspend fun search(
         @Body request: InnerTubeSearchRequest
-    ): Response<InnerTubeSearchResponse>
+    ): Response<JsonObject>
 
     @Headers(
         "Content-Type: application/json",
-        "User-Agent: com.google.android.apps.youtube.music/6.42.52 (Linux; U; Android 14; ru_RU; Infinix X6833B)",
-        "X-YouTube-Client-Name: 21",
-        "X-YouTube-Client-Version: 6.42.52"
+        "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+        "Origin: https://music.youtube.com",
+        "Referer: https://music.youtube.com/",
+        "X-YouTube-Client-Name: 67",
+        "X-YouTube-Client-Version: 1.20240401.01.00"
     )
     @POST("youtubei/v1/player")
     suspend fun getPlayer(
         @Body request: InnerTubePlayerRequest
-    ): Response<InnerTubePlayerResponse>
+    ): Response<JsonObject>
 }
