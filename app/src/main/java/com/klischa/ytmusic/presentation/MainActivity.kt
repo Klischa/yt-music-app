@@ -189,10 +189,10 @@ fun MainContent(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // Прикрепленный фоновый YouTube Audio Player Engine (гарантирует воспроизведение звука)
+            // Прикрепленный фоновый HTML5 YouTube Audio Engine (гарантирует воспроизведение звука)
             AndroidView(
                 factory = { ctx ->
-                    playerViewModel.createAndAttachYouTubePlayer(ctx)
+                    playerViewModel.createAndAttachAudioPlayer(ctx)
                 },
                 modifier = Modifier
                     .size(1.dp)

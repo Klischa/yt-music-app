@@ -3,6 +3,7 @@ package com.klischa.ytmusic.presentation.viewmodel
 import android.app.Application
 import android.content.ComponentName
 import android.content.Context
+import android.view.View
 import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -15,10 +16,9 @@ import com.google.common.util.concurrent.MoreExecutors
 import com.klischa.ytmusic.data.downloader.MusicDownloadManager
 import com.klischa.ytmusic.data.innertube.InnerTubeRepositoryImpl
 import com.klischa.ytmusic.data.service.PlaybackService
-import com.klischa.ytmusic.data.service.YouTubeAudioPlayerBridge
+import com.klischa.ytmusic.data.service.YouTubeAudioWebView
 import com.klischa.ytmusic.domain.model.DownloadState
 import com.klischa.ytmusic.domain.model.Track
-import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.views.YouTubePlayerView
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -31,7 +31,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private val repository = InnerTubeRepositoryImpl(application)
     private val downloadManager = MusicDownloadManager(application, repository)
-    private val youTubeBridge = YouTubeAudioPlayerBridge(application)
+    private val audioWebView = YouTubeAudioWebView(application)
 
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var mediaController: MediaController? = null
@@ -61,11 +61,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     init {
         initMediaController()
-        observeYouTubeBridge()
+        observeAudioWebView()
     }
 
-    fun createAndAttachYouTubePlayer(context: Context): YouTubePlayerView {
-        return youTubeBridge.createAndBindPlayerView(context)
+    fun createAndAttachAudioPlayer(context: Context): View {
+        return audioWebView.createAndAttachWebView(context)
     }
 
     private fun initMediaController() {
@@ -84,23 +84,23 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }, MoreExecutors.directExecutor())
     }
 
-    private fun observeYouTubeBridge() {
+    private fun observeAudioWebView() {
         viewModelScope.launch {
-            youTubeBridge.isPlaying.collect { playing ->
+            audioWebView.isPlaying.collect { playing ->
                 if (!isPlayingLocalFile) {
                     _isPlaying.value = playing
                 }
             }
         }
         viewModelScope.launch {
-            youTubeBridge.currentPositionMs.collect { pos ->
+            audioWebView.currentPositionMs.collect { pos ->
                 if (!isPlayingLocalFile) {
                     _currentPositionMs.value = pos
                 }
             }
         }
         viewModelScope.launch {
-            youTubeBridge.durationMs.collect { dur ->
+            audioWebView.durationMs.collect { dur ->
                 if (!isPlayingLocalFile && dur > 0) {
                     _durationMs.value = dur
                 }
@@ -133,19 +133,19 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _currentTrack.value = track
         _queue.value = newQueue
 
-        // 1. Если трек уже скачан локально — играем через ExoPlayer
+        // 1. Если трек уже скачан локально — воспроизводим через ExoPlayer
         if (track.localUri != null) {
             isPlayingLocalFile = true
-            youTubeBridge.pause()
+            audioWebView.pause()
             startLocalPlayback(track)
             return
         }
 
-        // 2. Для онлайн-треков запускаем воспроизведение через встроенный YouTube Player Engine
+        // 2. Для онлайн-треков запускаем потоковое воспроизведение через HTML5 Audio Engine
         isPlayingLocalFile = false
         mediaController?.pause()
         _durationMs.value = (track.durationSeconds * 1000L).coerceAtLeast(1000L)
-        youTubeBridge.playVideo(track.id)
+        audioWebView.playTrack(track.id)
         _isPlaying.value = true
     }
 
@@ -166,7 +166,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 controller.play()
             }
         } else {
-            youTubeBridge.togglePlayPause()
+            audioWebView.togglePlayPause()
         }
     }
 
@@ -174,7 +174,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         if (isPlayingLocalFile) {
             mediaController?.seekTo(positionMs)
         } else {
-            youTubeBridge.seekTo(positionMs)
+            audioWebView.seekTo(positionMs)
         }
         _currentPositionMs.value = positionMs
     }
@@ -234,7 +234,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         super.onCleared()
         controllerFuture?.let { MediaController.releaseFuture(it) }
         mediaController = null
-        youTubeBridge.release()
+        audioWebView.release()
         stopProgressTracking()
     }
 }
