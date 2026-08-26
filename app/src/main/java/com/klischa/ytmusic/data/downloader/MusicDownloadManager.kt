@@ -22,7 +22,7 @@ import java.util.concurrent.TimeUnit
  */
 class MusicDownloadManager(
     private val context: Context,
-    private val repository: InnerTubeRepositoryImpl = InnerTubeRepositoryImpl()
+    private val repository: InnerTubeRepositoryImpl = InnerTubeRepositoryImpl(context)
 ) {
     private val tag = "MusicDownloadManager"
     private val okHttpClient = OkHttpClient.Builder()

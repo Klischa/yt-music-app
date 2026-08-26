@@ -1,6 +1,7 @@
 package com.klischa.ytmusic.presentation.viewmodel
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.klischa.ytmusic.data.innertube.InnerTubeRepositoryImpl
 import com.klischa.ytmusic.domain.model.Track
@@ -11,9 +12,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-class SearchViewModel(
-    private val repository: InnerTubeRepositoryImpl = InnerTubeRepositoryImpl()
-) : ViewModel() {
+class SearchViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val repository = InnerTubeRepositoryImpl(application)
 
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()

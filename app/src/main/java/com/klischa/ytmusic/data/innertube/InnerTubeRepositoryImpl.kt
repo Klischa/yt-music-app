@@ -1,5 +1,6 @@
 package com.klischa.ytmusic.data.innertube
 
+import android.content.Context
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.klischa.ytmusic.domain.model.StreamInfo
@@ -9,8 +10,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 class InnerTubeRepositoryImpl(
-    private val api: InnerTubeApi = InnerTubeClient.api,
-    private val streamResolver: AudioStreamResolver = AudioStreamResolver()
+    private val context: Context,
+    private val api: InnerTubeApi = InnerTubeClient.getInstance(context).api,
+    private val streamResolver: AudioStreamResolver = AudioStreamResolver(context)
 ) : MusicRepository {
 
     override suspend fun search(query: String): Result<List<Track>> = withContext(Dispatchers.IO) {

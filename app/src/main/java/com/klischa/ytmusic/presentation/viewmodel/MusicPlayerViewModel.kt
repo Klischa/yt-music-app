@@ -26,7 +26,7 @@ import kotlinx.coroutines.launch
 
 class MusicPlayerViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val repository = InnerTubeRepositoryImpl()
+    private val repository = InnerTubeRepositoryImpl(application)
     private val downloadManager = MusicDownloadManager(application, repository)
 
     private var controllerFuture: ListenableFuture<MediaController>? = null
