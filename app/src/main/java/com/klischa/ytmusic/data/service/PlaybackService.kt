@@ -53,6 +53,16 @@ class PlaybackService : MediaLibraryService() {
 
         player = exoPlayer
 
+        exoPlayer.addListener(object : Player.Listener {
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                Log.e(tag, "Ошибка воспроизведения ExoPlayer: ${error.message} (${error.errorCodeName})", error)
+            }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                Log.i(tag, "Состояние воспроизведения: isPlaying = $isPlaying")
+            }
+        })
+
         // 2. PendingIntent для открытия MainActivity при клике на уведомление
         val sessionActivityIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP

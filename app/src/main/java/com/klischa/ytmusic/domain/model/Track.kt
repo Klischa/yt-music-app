@@ -34,9 +34,14 @@ data class Track(
             .setArtworkUri(if (thumbnailUrl.isNotEmpty()) Uri.parse(thumbnailUrl) else null)
             .build()
 
+        val requestMetadata = MediaItem.RequestMetadata.Builder()
+            .setMediaUri(uri)
+            .build()
+
         return MediaItem.Builder()
             .setMediaId(id)
             .setUri(uri)
+            .setRequestMetadata(requestMetadata)
             .setMediaMetadata(metadata)
             .build()
     }

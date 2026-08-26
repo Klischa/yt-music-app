@@ -34,6 +34,7 @@ class InnerTubeRepositoryImpl(
             if (response.isSuccessful && response.body() != null) {
                 val body = response.body()!!
                 val streamingData = body.getAsJsonObject("streamingData")
+
                 if (streamingData != null) {
                     val formatsList = mutableListOf<FormatItem>()
 
@@ -78,33 +79,30 @@ class InnerTubeRepositoryImpl(
 
                     if (bestFormat != null) {
                         val resolvedUrl = CipherDecipherer.resolveAudioStreamUrl(bestFormat)
-                            ?: "https://www.youtube.com/watch?v=$videoId"
-
-                        return@withContext Result.success(
-                            StreamInfo(
-                                videoId = videoId,
-                                audioUrl = resolvedUrl,
-                                bitrate = bestFormat.bitrate ?: 128000,
-                                mimeType = bestFormat.mimeType ?: "audio/mp4",
-                                contentLength = bestFormat.contentLength?.toLongOrNull() ?: 0L
+                        if (!resolvedUrl.isNullOrEmpty()) {
+                            return@withContext Result.success(
+                                StreamInfo(
+                                    videoId = videoId,
+                                    audioUrl = resolvedUrl,
+                                    bitrate = bestFormat.bitrate ?: 128000,
+                                    mimeType = bestFormat.mimeType ?: "audio/mp4",
+                                    contentLength = bestFormat.contentLength?.toLongOrNull() ?: 0L
+                                )
                             )
-                        )
+                        }
                     }
                 }
-
-                // Fallback ссылка на прямой веб-поток
-                Result.success(
-                    StreamInfo(
-                        videoId = videoId,
-                        audioUrl = "https://www.youtube.com/watch?v=$videoId",
-                        bitrate = 128000,
-                        mimeType = "audio/mp4",
-                        contentLength = 0L
-                    )
-                )
-            } else {
-                Result.failure(Exception("Ошибка получения потока: HTTP ${response.code()}"))
             }
+
+            Result.success(
+                StreamInfo(
+                    videoId = videoId,
+                    audioUrl = "https://music.youtube.com/watch?v=$videoId",
+                    bitrate = 128000,
+                    mimeType = "audio/mp4",
+                    contentLength = 0L
+                )
+            )
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -121,7 +119,6 @@ class InnerTubeRepositoryImpl(
             if (element.isJsonObject) {
                 val obj = element.asJsonObject
 
-                // Проверяем musicResponsiveListItemRenderer
                 if (obj.has("musicResponsiveListItemRenderer")) {
                     val r = obj.getAsJsonObject("musicResponsiveListItemRenderer")
                     val flex = r.getAsJsonArray("flexColumns")
@@ -186,7 +183,6 @@ class InnerTubeRepositoryImpl(
                     }
                 }
 
-                // Рекурсивный обход всех дочерних полей
                 for (entry in obj.entrySet()) {
                     recursiveExtract(entry.value)
                 }

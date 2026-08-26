@@ -123,15 +123,27 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     private fun startPlaybackWithUri(track: Track, uriString: String) {
-        val controller = mediaController ?: return
+        val playAction = { controller: MediaController ->
+            val mediaItem = track.toMediaItem().buildUpon()
+                .setUri(uriString)
+                .build()
 
-        val mediaItem = track.toMediaItem().buildUpon()
-            .setUri(uriString)
-            .build()
+            controller.setMediaItem(mediaItem)
+            controller.prepare()
+            controller.play()
+        }
 
-        controller.setMediaItem(mediaItem)
-        controller.prepare()
-        controller.play()
+        val controller = mediaController
+        if (controller != null) {
+            playAction(controller)
+        } else {
+            controllerFuture?.addListener({
+                try {
+                    val ctrl = controllerFuture?.get()
+                    ctrl?.let { playAction(it) }
+                } catch (ignored: Exception) {}
+            }, MoreExecutors.directExecutor())
+        }
     }
 
     fun togglePlayPause() {
