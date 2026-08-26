@@ -6,15 +6,14 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.os.PowerManager
 import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
 import com.klischa.ytmusic.R
@@ -22,7 +21,7 @@ import com.klischa.ytmusic.presentation.MainActivity
 
 /**
  * Сервис фонового воспроизведения музыки на базе AndroidX Media3 (MediaLibraryService).
- * Обеспечивает потоковое воспроизведение Google/YouTube Media, работу при выключенном экране и системные уведомления.
+ * Обеспечивает воспроизведение при заблокированном экране, управление очередью и системное уведомление.
  */
 class PlaybackService : MediaLibraryService() {
 
@@ -30,6 +29,7 @@ class PlaybackService : MediaLibraryService() {
 
     private var player: ExoPlayer? = null
     private var mediaLibrarySession: MediaLibrarySession? = null
+    private var wakeLock: PowerManager.WakeLock? = null
 
     companion object {
         const val NOTIFICATION_CHANNEL_ID = "yt_music_playback_channel"
@@ -41,30 +41,23 @@ class PlaybackService : MediaLibraryService() {
         super.onCreate()
         createNotificationChannel()
 
-        // 1. Настройка сетевого источника данных с YouTube/Google заголовками
-        val httpDataSourceFactory = DefaultHttpDataSource.Factory()
-            .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36")
-            .setAllowCrossProtocolRedirects(true)
-            .setConnectTimeoutMs(20000)
-            .setReadTimeoutMs(25000)
-            .setDefaultRequestProperties(
-                mapOf(
-                    "Origin" to "https://music.youtube.com",
-                    "Referer" to "https://music.youtube.com/"
-                )
-            )
+        // 1. Захват частичного WakeLock для предотвращения засыпания CPU при выключенном экране
+        try {
+            val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+            wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "MyYTMusic:PlaybackWakeLock").apply {
+                setReferenceCounted(false)
+            }
+        } catch (e: Exception) {
+            Log.w(tag, "Не удалось создать WakeLock: ${e.message}")
+        }
 
-        val mediaSourceFactory = DefaultMediaSourceFactory(this)
-            .setDataSourceFactory(httpDataSourceFactory)
-
-        // 2. Инициализация ExoPlayer
+        // 2. Инициализация ExoPlayer с аудиоатрибутами для музыки
         val audioAttributes = AudioAttributes.Builder()
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
             .setUsage(C.USAGE_MEDIA)
             .build()
 
         val exoPlayer = ExoPlayer.Builder(this)
-            .setMediaSourceFactory(mediaSourceFactory)
             .setAudioAttributes(audioAttributes, true)
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_NETWORK)
@@ -73,12 +66,12 @@ class PlaybackService : MediaLibraryService() {
         player = exoPlayer
 
         exoPlayer.addListener(object : Player.Listener {
-            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-                Log.e(tag, "Ошибка воспроизведения ExoPlayer: ${error.message} (${error.errorCodeName})", error)
-            }
-
             override fun onIsPlayingChanged(isPlaying: Boolean) {
-                Log.i(tag, "Состояние воспроизведения: isPlaying = $isPlaying")
+                if (isPlaying) {
+                    wakeLock?.acquire(4 * 3600 * 1000L) // 4 часа макс
+                } else {
+                    if (wakeLock?.isHeld == true) wakeLock?.release()
+                }
             }
         })
 
@@ -100,7 +93,7 @@ class PlaybackService : MediaLibraryService() {
             .setSessionActivity(sessionActivityPendingIntent)
             .build()
 
-        Log.i(tag, "PlaybackService успешно запущен и готов к воспроизведению")
+        Log.i(tag, "PlaybackService успешно запущен и инициализирован с WakeLock")
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? {
@@ -132,6 +125,11 @@ class PlaybackService : MediaLibraryService() {
     }
 
     override fun onDestroy() {
+        if (wakeLock?.isHeld == true) {
+            wakeLock?.release()
+        }
+        wakeLock = null
+
         mediaLibrarySession?.run {
             player.release()
             release()

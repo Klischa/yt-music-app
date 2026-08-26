@@ -168,8 +168,15 @@ class YouTubeAudioWebView(context: Context) {
 
     fun resume() {
         _isPlaying.value = true
+        webView?.onResume()
+        webView?.resumeTimers()
         webView?.evaluateJavascript("if (player && player.playVideo) player.playVideo();", null)
         mainHandler.post(progressRunnable)
+    }
+
+    fun keepAliveInBackground() {
+        webView?.onResume()
+        webView?.resumeTimers()
     }
 
     fun togglePlayPause() {
