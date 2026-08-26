@@ -1,5 +1,6 @@
 package com.klischa.ytmusic.data.innertube
 
+import android.content.Context
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Response
@@ -9,9 +10,12 @@ import retrofit2.converter.gson.GsonConverterFactory
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
-object InnerTubeClient {
+/**
+ * HTTP Клиент для работы с InnerTube API с поддержкой авторизационных заголовков.
+ */
+class InnerTubeClient(private val context: Context) {
 
-    private const val BASE_URL = "https://music.youtube.com/"
+    private val baseUrl = "https://music.youtube.com/"
 
     private val retryInterceptor = Interceptor { chain ->
         var response: Response? = null
@@ -27,7 +31,7 @@ object InnerTubeClient {
                 exception = e
                 if (tryCount >= maxLimit) throw e
                 try {
-                    Thread.sleep(1000L * tryCount)
+                    Thread.sleep(800L * tryCount)
                 } catch (ignored: InterruptedException) {}
             }
         }
@@ -35,10 +39,11 @@ object InnerTubeClient {
         response ?: throw exception ?: IOException("Сетевой сбой при обращении к InnerTube API")
     }
 
-    private val okHttpClient = OkHttpClient.Builder()
+    val okHttpClient: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
         .writeTimeout(20, TimeUnit.SECONDS)
+        .addInterceptor(AuthInterceptor(context))
         .addInterceptor(retryInterceptor)
         .addInterceptor(HttpLoggingInterceptor().apply {
             level = HttpLoggingInterceptor.Level.BASIC
@@ -46,9 +51,20 @@ object InnerTubeClient {
         .build()
 
     val api: InnerTubeApi = Retrofit.Builder()
-        .baseUrl(BASE_URL)
+        .baseUrl(baseUrl)
         .client(okHttpClient)
         .addConverterFactory(GsonConverterFactory.create())
         .build()
         .create(InnerTubeApi::class.java)
+
+    companion object {
+        @Volatile
+        private var instance: InnerTubeClient? = null
+
+        fun getInstance(context: Context): InnerTubeClient {
+            return instance ?: synchronized(this) {
+                instance ?: InnerTubeClient(context.applicationContext).also { instance = it }
+            }
+        }
+    }
 }

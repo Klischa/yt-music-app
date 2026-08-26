@@ -1,9 +1,11 @@
 package com.klischa.ytmusic.data.innertube
 
+import android.content.Context
 import android.util.Log
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import com.klischa.ytmusic.data.auth.UserAccountManager
 import com.klischa.ytmusic.domain.model.StreamInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -16,10 +18,10 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Мульти-стратегический резолвер аудиопотоков (Multi-Source YouTube Audio Stream Resolver).
- * Использует каскад из InnerTube API, Embedded Player и открытых шлюзов для гарантированного
- * получения рабочей прямой ссылки на звук.
+ * Передаёт авторизационные заголовки пользователя (Cookies, SAPISIDHASH) для обхода bot-check и ограничений.
  */
 class AudioStreamResolver(
+    private val context: Context,
     private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(12, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
@@ -29,9 +31,10 @@ class AudioStreamResolver(
 ) {
     private val tag = "AudioStreamResolver"
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
+    private val accountManager by lazy { UserAccountManager.getInstance(context) }
 
     suspend fun resolveAudioStream(videoId: String): Result<StreamInfo> = withContext(Dispatchers.IO) {
-        // Стратегия 1: YouTube Music Web Remix InnerTube Player
+        // Стратегия 1: YouTube Music Web Remix InnerTube Player (с авторизацией пользователя)
         try {
             val stream1 = tryInnerTubeWebRemix(videoId)
             if (stream1 != null && stream1.audioUrl.startsWith("http")) {
@@ -42,7 +45,7 @@ class AudioStreamResolver(
             Log.w(tag, "Strategy 1 ошибка: ${e.message}")
         }
 
-        // Стратегия 2: Embedded Player / TV Endpoint
+        // Стратегия 2: Embedded Player
         try {
             val stream2 = tryEmbeddedPlayer(videoId)
             if (stream2 != null && stream2.audioUrl.startsWith("http")) {
@@ -64,7 +67,7 @@ class AudioStreamResolver(
             Log.w(tag, "Strategy 3 ошибка: ${e.message}")
         }
 
-        Result.failure(IOException("Не удалось получить ссылку на аудиопоток для трека $videoId"))
+        Result.failure(IOException("Не удалось получить ссылку на аудиопоток. Пожалуйста, выполните вход в аккаунт через кнопку входа."))
     }
 
     private fun tryInnerTubeWebRemix(videoId: String): StreamInfo? {
@@ -88,7 +91,7 @@ class AudioStreamResolver(
             }
         """.trimIndent()
 
-        val request = Request.Builder()
+        val requestBuilder = Request.Builder()
             .url(url)
             .post(payload.toRequestBody(jsonMediaType))
             .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36")
@@ -96,9 +99,19 @@ class AudioStreamResolver(
             .header("Referer", "https://music.youtube.com/")
             .header("X-YouTube-Client-Name", "67")
             .header("X-YouTube-Client-Version", "1.20240401.01.00")
-            .build()
 
-        val response = okHttpClient.newCall(request).execute()
+        val cookies = accountManager.getSavedCookies()
+        if (!cookies.isNullOrEmpty()) {
+            requestBuilder.header("Cookie", cookies)
+        }
+
+        val authHeader = accountManager.generateSapisidHash()
+        if (!authHeader.isNullOrEmpty()) {
+            requestBuilder.header("Authorization", authHeader)
+            requestBuilder.header("X-Origin", "https://music.youtube.com")
+        }
+
+        val response = okHttpClient.newCall(requestBuilder.build()).execute()
         if (!response.isSuccessful) return null
 
         val responseBody = response.body?.string() ?: return null
@@ -129,14 +142,18 @@ class AudioStreamResolver(
             }
         """.trimIndent()
 
-        val request = Request.Builder()
+        val requestBuilder = Request.Builder()
             .url(url)
             .post(payload.toRequestBody(jsonMediaType))
             .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36")
             .header("Referer", "https://www.youtube.com/embed/$videoId")
-            .build()
 
-        val response = okHttpClient.newCall(request).execute()
+        val cookies = accountManager.getSavedCookies()
+        if (!cookies.isNullOrEmpty()) {
+            requestBuilder.header("Cookie", cookies)
+        }
+
+        val response = okHttpClient.newCall(requestBuilder.build()).execute()
         if (!response.isSuccessful) return null
 
         val responseBody = response.body?.string() ?: return null
@@ -223,7 +240,6 @@ class AudioStreamResolver(
         extract(streamingData.getAsJsonArray("adaptiveFormats"))
         extract(streamingData.getAsJsonArray("formats"))
 
-        // Приоритет: чистые аудиоформаты (m4a, opus)
         val audioFormats = formatsList
             .filter { it.mimeType?.startsWith("audio/") == true }
             .sortedByDescending { it.bitrate ?: 0 }
