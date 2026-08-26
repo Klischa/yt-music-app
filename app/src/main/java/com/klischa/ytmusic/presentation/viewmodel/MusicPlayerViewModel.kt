@@ -16,10 +16,13 @@ import com.google.common.util.concurrent.MoreExecutors
 import com.klischa.ytmusic.data.downloader.MusicDownloadManager
 import com.klischa.ytmusic.data.innertube.InnerTubeRepositoryImpl
 import com.klischa.ytmusic.data.innertube.WatchNextRepository
+import com.klischa.ytmusic.data.local.PlaylistManager
 import com.klischa.ytmusic.data.lyrics.LyricsService
 import com.klischa.ytmusic.data.service.PlaybackService
 import com.klischa.ytmusic.data.service.YouTubeAudioWebView
 import com.klischa.ytmusic.domain.model.DownloadState
+import com.klischa.ytmusic.domain.model.LikeStatus
+import com.klischa.ytmusic.domain.model.Playlist
 import com.klischa.ytmusic.domain.model.Track
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -36,6 +39,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val audioWebView = YouTubeAudioWebView(application)
     private val lyricsService = LyricsService()
     private val watchNextRepo = WatchNextRepository(application)
+    val playlistManager = PlaylistManager.getInstance(application)
 
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var mediaController: MediaController? = null
@@ -64,6 +68,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val _isLyricsLoading = MutableStateFlow(false)
     val isLyricsLoading: StateFlow<Boolean> = _isLyricsLoading.asStateFlow()
 
+    private val _currentTrackLikeStatus = MutableStateFlow(LikeStatus.NONE)
+    val currentTrackLikeStatus: StateFlow<LikeStatus> = _currentTrackLikeStatus.asStateFlow()
+
+    val playlists: StateFlow<List<Playlist>> = playlistManager.playlists
+    val likedTracks: StateFlow<List<Track>> = playlistManager.likedTracks
     val downloadStates: StateFlow<Map<String, DownloadState>> = downloadManager.downloadStates
 
     private var isPlayingLocalFile = false
@@ -143,6 +152,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _currentTrack.value = track
         _queue.value = newQueue
         _lyrics.value = null
+        _currentTrackLikeStatus.value = playlistManager.getLikeStatus(track.id)
 
         loadLyrics(track)
         loadWatchNext(track)
@@ -159,6 +169,45 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _durationMs.value = (track.durationSeconds * 1000L).coerceAtLeast(1000L)
         audioWebView.playTrack(track.id)
         _isPlaying.value = true
+    }
+
+    fun toggleLike(track: Track) {
+        val newStatus = playlistManager.toggleLike(track)
+        if (_currentTrack.value?.id == track.id) {
+            _currentTrackLikeStatus.value = newStatus
+        }
+        val msg = if (newStatus == LikeStatus.LIKED) "Добавлено в Понравившиеся ❤️" else "Удалено из Понравившихся"
+        Toast.makeText(getApplication(), msg, Toast.LENGTH_SHORT).show()
+    }
+
+    fun toggleDislike(track: Track) {
+        val newStatus = playlistManager.toggleDislike(track)
+        if (_currentTrack.value?.id == track.id) {
+            _currentTrackLikeStatus.value = newStatus
+        }
+        if (newStatus == LikeStatus.DISLIKED) {
+            Toast.makeText(getApplication(), "Дизлайк: трек будет пропускаться 👎", Toast.LENGTH_SHORT).show()
+            skipNext()
+        }
+    }
+
+    fun createPlaylist(title: String, description: String = "") {
+        playlistManager.createPlaylist(title, description)
+        Toast.makeText(getApplication(), "Плейлист '$title' создан!", Toast.LENGTH_SHORT).show()
+    }
+
+    fun deletePlaylist(playlistId: String) {
+        playlistManager.deletePlaylist(playlistId)
+        Toast.makeText(getApplication(), "Плейлист удалён", Toast.LENGTH_SHORT).show()
+    }
+
+    fun addTrackToPlaylist(playlistId: String, track: Track) {
+        playlistManager.addTrackToPlaylist(playlistId, track)
+        Toast.makeText(getApplication(), "Трек добавлен в плейлист!", Toast.LENGTH_SHORT).show()
+    }
+
+    fun removeTrackFromPlaylist(playlistId: String, trackId: String) {
+        playlistManager.removeTrackFromPlaylist(playlistId, trackId)
     }
 
     private fun loadLyrics(track: Track) {

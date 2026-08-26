@@ -14,10 +14,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+<<<<<<< HEAD
 import androidx.compose.foundation.shape.RoundedCornerShape
+=======
+>>>>>>> 2787d99 (feat(playlists): implement Playlists management, Liked songs, Dislikes, and Synced Karaoke Lyrics)
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -45,8 +49,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+<<<<<<< HEAD
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+=======
+>>>>>>> 2787d99 (feat(playlists): implement Playlists management, Liked songs, Dislikes, and Synced Karaoke Lyrics)
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
@@ -55,13 +62,16 @@ import com.klischa.ytmusic.data.auth.UserAccountManager
 import com.klischa.ytmusic.presentation.ui.components.MiniPlayerBar
 import com.klischa.ytmusic.presentation.ui.screens.DownloadsScreen
 import com.klischa.ytmusic.presentation.ui.screens.FullPlayerScreen
+<<<<<<< HEAD
 import com.klischa.ytmusic.presentation.ui.screens.LoginScreen
+=======
+import com.klischa.ytmusic.presentation.ui.screens.LibraryScreen
+>>>>>>> 2787d99 (feat(playlists): implement Playlists management, Liked songs, Dislikes, and Synced Karaoke Lyrics)
 import com.klischa.ytmusic.presentation.ui.screens.SearchScreen
 import com.klischa.ytmusic.presentation.ui.theme.AccentGreen
 import com.klischa.ytmusic.presentation.ui.theme.DarkCard
 import com.klischa.ytmusic.presentation.ui.theme.DarkSurface
 import com.klischa.ytmusic.presentation.ui.theme.RedPrimary
-import com.klischa.ytmusic.presentation.ui.theme.TextPrimary
 import com.klischa.ytmusic.presentation.ui.theme.TextSecondary
 import com.klischa.ytmusic.presentation.ui.theme.YTMusicTheme
 import com.klischa.ytmusic.presentation.util.PermissionsHelper
@@ -107,6 +117,7 @@ fun MainContent(
     playerViewModel: MusicPlayerViewModel,
     libraryViewModel: LibraryViewModel
 ) {
+<<<<<<< HEAD
     val context = LocalContext.current
     val accountManager = remember { UserAccountManager.getInstance(context) }
     val isLoggedIn by accountManager.isLoggedIn.collectAsState()
@@ -115,6 +126,9 @@ fun MainContent(
     var selectedTab by remember { mutableIntStateOf(0) }
     var isAccountDialogOpen by remember { mutableStateOf(false) }
     var isLoginScreenOpen by remember { mutableStateOf(false) }
+=======
+    var selectedTab by remember { mutableIntStateOf(0) } // 0: Search, 1: Library, 2: Downloads
+>>>>>>> 2787d99 (feat(playlists): implement Playlists management, Liked songs, Dislikes, and Synced Karaoke Lyrics)
 
     val currentTrack by playerViewModel.currentTrack.collectAsState()
     val isPlaying by playerViewModel.isPlaying.collectAsState()
@@ -124,6 +138,11 @@ fun MainContent(
     val lyricsResult by playerViewModel.lyrics.collectAsState()
     val isLyricsLoading by playerViewModel.isLyricsLoading.collectAsState()
     val queue by playerViewModel.queue.collectAsState()
+<<<<<<< HEAD
+=======
+    val likeStatus by playerViewModel.currentTrackLikeStatus.collectAsState()
+    val playlists by playerViewModel.playlists.collectAsState()
+>>>>>>> 2787d99 (feat(playlists): implement Playlists management, Liked songs, Dislikes, and Synced Karaoke Lyrics)
 
     Scaffold(
         topBar = {
@@ -170,8 +189,22 @@ fun MainContent(
 
                 NavigationBarItem(
                     selected = selectedTab == 1,
+                    onClick = { selectedTab = 1 },
+                    icon = { Icon(Icons.Default.LibraryMusic, contentDescription = "Медиатека") },
+                    label = { Text("Медиатека") },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = RedPrimary,
+                        selectedTextColor = RedPrimary,
+                        unselectedIconColor = TextSecondary,
+                        unselectedTextColor = TextSecondary,
+                        indicatorColor = DarkCard
+                    )
+                )
+
+                NavigationBarItem(
+                    selected = selectedTab == 2,
                     onClick = {
-                        selectedTab = 1
+                        selectedTab = 2
                         libraryViewModel.loadDownloads()
                     },
                     icon = { Icon(Icons.Default.Download, contentDescription = "Загрузки") },
@@ -204,7 +237,8 @@ fun MainContent(
 
             when (selectedTab) {
                 0 -> SearchScreen(searchViewModel = searchViewModel, playerViewModel = playerViewModel)
-                1 -> DownloadsScreen(libraryViewModel = libraryViewModel, playerViewModel = playerViewModel)
+                1 -> LibraryScreen(playerViewModel = playerViewModel)
+                2 -> DownloadsScreen(libraryViewModel = libraryViewModel, playerViewModel = playerViewModel)
             }
 
             // MiniPlayerBar прикрепленный снизу
@@ -225,6 +259,7 @@ fun MainContent(
             }
         }
 
+<<<<<<< HEAD
         // Диалог управления аккаунтом
         if (isAccountDialogOpen) {
             Dialog(onDismissRequest = { isAccountDialogOpen = false }) {
@@ -311,6 +346,9 @@ fun MainContent(
         }
 
         // Полноэкранный плеер с караоке-текстом и очередью
+=======
+        // Полноэкранный плеер с караоке-текстом, очередью, лайками и плейлистами
+>>>>>>> 2787d99 (feat(playlists): implement Playlists management, Liked songs, Dislikes, and Synced Karaoke Lyrics)
         if (isFullPlayerOpen && currentTrack != null) {
             Dialog(
                 onDismissRequest = { playerViewModel.setFullPlayerExpanded(false) },
@@ -321,9 +359,22 @@ fun MainContent(
                     isPlaying = isPlaying,
                     progressMs = progressMs,
                     durationMs = durationMs,
+<<<<<<< HEAD
                     lyricsResult = lyricsResult,
                     isLyricsLoading = isLyricsLoading,
                     queue = queue,
+=======
+                    likeStatus = likeStatus,
+                    lyricsResult = lyricsResult,
+                    isLyricsLoading = isLyricsLoading,
+                    queue = queue,
+                    playlists = playlists,
+                    onLikeClick = { playerViewModel.toggleLike(it) },
+                    onDislikeClick = { playerViewModel.toggleDislike(it) },
+                    onAddToPlaylist = { playlistId, trackToAdd ->
+                        playerViewModel.addTrackToPlaylist(playlistId, trackToAdd)
+                    },
+>>>>>>> 2787d99 (feat(playlists): implement Playlists management, Liked songs, Dislikes, and Synced Karaoke Lyrics)
                     onTrackSelect = { selectedTrack ->
                         playerViewModel.playTrack(selectedTrack, queue)
                     },

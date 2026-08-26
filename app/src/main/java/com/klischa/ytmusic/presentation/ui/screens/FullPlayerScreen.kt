@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -25,8 +26,15 @@ import androidx.compose.material.icons.filled.Lyrics
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PauseCircle
 import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.ThumbDown
+import androidx.compose.material.icons.filled.ThumbDownOffAlt
+import androidx.compose.material.icons.filled.ThumbUp
+import androidx.compose.material.icons.filled.ThumbUpOffAlt
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -38,6 +46,7 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.TabRowDefaults
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -55,8 +64,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
 import com.klischa.ytmusic.data.lyrics.LyricsService
+import com.klischa.ytmusic.domain.model.LikeStatus
+import com.klischa.ytmusic.domain.model.Playlist
 import com.klischa.ytmusic.domain.model.Track
 import com.klischa.ytmusic.presentation.ui.theme.AccentGreen
 import com.klischa.ytmusic.presentation.ui.theme.DarkBackground
@@ -71,9 +83,14 @@ fun FullPlayerScreen(
     isPlaying: Boolean,
     progressMs: Long,
     durationMs: Long,
+    likeStatus: LikeStatus,
     lyricsResult: LyricsService.LyricsResult?,
     isLyricsLoading: Boolean,
     queue: List<Track>,
+    playlists: List<Playlist>,
+    onLikeClick: (Track) -> Unit,
+    onDislikeClick: (Track) -> Unit,
+    onAddToPlaylist: (playlistId: String, Track) -> Unit,
     onTrackSelect: (Track) -> Unit,
     onCloseClick: () -> Unit,
     onPlayPauseClick: () -> Unit,
@@ -84,9 +101,10 @@ fun FullPlayerScreen(
 ) {
     if (track == null) return
 
-    var selectedTab by remember { mutableIntStateOf(0) } // 0: Player, 1: Lyrics, 2: Queue
+    var selectedTab by remember { mutableIntStateOf(0) } // 0: Track, 1: Lyrics, 2: Queue
     var isUserSeeking by remember { mutableStateOf(false) }
     var userSeekPosition by remember { mutableFloatStateOf(0f) }
+    var isAddToPlaylistDialogOpen by remember { mutableStateOf(false) }
 
     val currentSliderValue = if (isUserSeeking) {
         userSeekPosition
@@ -97,7 +115,6 @@ fun FullPlayerScreen(
     val maxSliderValue = durationMs.toFloat().coerceAtLeast(1f)
     val lyricsListState = rememberLazyListState()
 
-    // Автопрокрутка текста песни к текущей строке
     if (lyricsResult?.isSynced == true) {
         val activeLineIndex = lyricsResult.lines.indexOfLast { progressMs >= it.timestampMs }
         if (activeLineIndex >= 0) {
@@ -114,7 +131,7 @@ fun FullPlayerScreen(
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Верхняя панель: кнопка свернуть
+        // Верхняя панель
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -144,7 +161,7 @@ fun FullPlayerScreen(
             }
         }
 
-        // Переключатель вкладок (Плеер | Текст | Очередь)
+        // Переключатель вкладок
         TabRow(
             selectedTabIndex = selectedTab,
             containerColor = DarkBackground,
@@ -192,7 +209,7 @@ fun FullPlayerScreen(
                     contentScale = ContentScale.Crop
                 )
 
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
                 Text(
                     text = track.title,
@@ -212,10 +229,46 @@ fun FullPlayerScreen(
                     overflow = TextOverflow.Ellipsis,
                     color = TextSecondary
                 )
+
+                // Панель действий: Лайк, Дизлайк, Добавить в плейлист
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = { onLikeClick(track) }) {
+                        Icon(
+                            imageVector = if (likeStatus == LikeStatus.LIKED) Icons.Default.ThumbUp else Icons.Default.ThumbUpOffAlt,
+                            contentDescription = "Лайк",
+                            tint = if (likeStatus == LikeStatus.LIKED) RedPrimary else TextSecondary,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+
+                    IconButton(onClick = { onDislikeClick(track) }) {
+                        Icon(
+                            imageVector = if (likeStatus == LikeStatus.DISLIKED) Icons.Default.ThumbDown else Icons.Default.ThumbDownOffAlt,
+                            contentDescription = "Дизлайк",
+                            tint = if (likeStatus == LikeStatus.DISLIKED) RedPrimary else TextSecondary,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+
+                    IconButton(onClick = { isAddToPlaylistDialogOpen = true }) {
+                        Icon(
+                            imageVector = Icons.Default.PlaylistAdd,
+                            contentDescription = "В плейлист",
+                            tint = TextSecondary,
+                            modifier = Modifier.size(30.dp)
+                        )
+                    }
+                }
             }
 
             1 -> {
-                // Вкладка 2: Синхронизированный караоке-текст
+                // Вкладка 2: Караоке-текст
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -322,7 +375,7 @@ fun FullPlayerScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         // Ползунок перемотки (Slider)
         Slider(
@@ -362,7 +415,7 @@ fun FullPlayerScreen(
             )
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         // Кнопки управления (Предыдущий, Играть/Пауза, Следующий)
         Row(
@@ -404,6 +457,52 @@ fun FullPlayerScreen(
                     tint = TextPrimary,
                     modifier = Modifier.size(40.dp)
                 )
+            }
+        }
+
+        // Диалог добавления в плейлист
+        if (isAddToPlaylistDialogOpen) {
+            Dialog(onDismissRequest = { isAddToPlaylistDialogOpen = false }) {
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = DarkCard),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Добавить в плейлист", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        if (playlists.isEmpty()) {
+                            Text("Плейлистов пока нет. Создайте плейлист во вкладке Медиатека.", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+                        } else {
+                            LazyColumn {
+                                items(playlists) { pl ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                onAddToPlaylist(pl.id, track)
+                                                isAddToPlaylistDialogOpen = false
+                                            }
+                                            .padding(vertical = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Default.PlaylistAdd, contentDescription = null, tint = RedPrimary)
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Text(pl.title, style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            TextButton(onClick = { isAddToPlaylistDialogOpen = false }) {
+                                Text("Закрыть", color = RedPrimary)
+                            }
+                        }
+                    }
+                }
             }
         }
     }
