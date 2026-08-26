@@ -2,10 +2,7 @@ package com.klischa.ytmusic.presentation.viewmodel
 
 import android.app.Application
 import android.content.ComponentName
-<<<<<<< HEAD
-=======
 import android.content.Context
->>>>>>> 7114626 (fix: attach YouTubePlayerView directly into Compose AndroidView hierarchy and fix track duration parsing)
 import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -65,13 +62,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     init {
         initMediaController()
         observeYouTubeBridge()
-<<<<<<< HEAD
-=======
     }
 
     fun createAndAttachYouTubePlayer(context: Context): YouTubePlayerView {
         return youTubeBridge.createAndBindPlayerView(context)
->>>>>>> 7114626 (fix: attach YouTubePlayerView directly into Compose AndroidView hierarchy and fix track duration parsing)
     }
 
     private fun initMediaController() {
@@ -147,21 +141,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             return
         }
 
-<<<<<<< HEAD
-        // 2. Для онлайн-треков запускаем воспроизведение через YouTube Player Engine
-        isPlayingLocalFile = false
-        mediaController?.pause()
-        youTubeBridge.playVideo(track.id)
-        _isPlaying.value = true
-        _durationMs.value = (track.durationSeconds * 1000L).coerceAtLeast(180_000L)
-=======
         // 2. Для онлайн-треков запускаем воспроизведение через встроенный YouTube Player Engine
         isPlayingLocalFile = false
         mediaController?.pause()
         _durationMs.value = (track.durationSeconds * 1000L).coerceAtLeast(1000L)
         youTubeBridge.playVideo(track.id)
         _isPlaying.value = true
->>>>>>> 7114626 (fix: attach YouTubePlayerView directly into Compose AndroidView hierarchy and fix track duration parsing)
     }
 
     private fun startLocalPlayback(track: Track) {
