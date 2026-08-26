@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">My YT Music</string>
+    <string name="search_hint">Поиск треков, исполнителей, альбомов...</string>
+    <string name="tab_search">Поиск</string>
+    <string name="tab_library">Медиатека</string>
+    <string name="tab_downloads">Загрузки</string>
+    <string name="playback_notification_channel">Воспроизведение музыки</string>
+    <string name="download_notification_channel">Загрузка музыки</string>
+</resources>
