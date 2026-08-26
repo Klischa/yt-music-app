@@ -32,7 +32,8 @@ class MediaSessionCallback(
         startPositionMs: Long
     ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
         val updatedItems = mediaItems.map { item ->
-            item.buildUpon().setUri(item.requestMetadata.mediaUri ?: item.mediaId).build()
+            val uri = item.requestMetadata.mediaUri ?: android.net.Uri.parse(item.mediaId)
+            item.buildUpon().setUri(uri).build()
         }
         return Futures.immediateFuture(
             MediaSession.MediaItemsWithStartPosition(updatedItems, startIndex, startPositionMs)

@@ -68,7 +68,7 @@ class InnerTubeRepositoryImpl(
         if (body == null) return tracks
 
         val sections = body.contents?.tabbedSearchResultsRenderer?.tabs?.firstOrNull()
-            ?.tabRenderer?.content?.sectionListRenderer?.contents
+            ?.tabRenderer?.content?.contents
             ?: body.contents?.sectionListRenderer?.contents
             ?: emptyList()
 
