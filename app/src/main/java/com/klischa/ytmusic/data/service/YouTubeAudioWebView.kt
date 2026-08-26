@@ -148,7 +148,7 @@ class YouTubeAudioWebView(context: Context) {
             </html>
         """.trimIndent()
 
-        wv.loadDataWithBaseURL("https://music.youtube.com", html, "text/html", "UTF-8", "https://music.youtube.com")
+        wv.loadDataWithBaseURL("https://music.youtube.com", html, "text/html", "UTF-8", null as String?)
     }
 
     fun playTrack(videoId: String, startPositionMs: Long = 0L) {
