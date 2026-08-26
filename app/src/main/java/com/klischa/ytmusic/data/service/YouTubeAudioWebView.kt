@@ -42,14 +42,16 @@ class YouTubeAudioWebView(context: Context) {
     private val progressRunnable = object : Runnable {
         override fun run() {
             if (_isPlaying.value && webView != null) {
-                webView?.evaluateJavascript("if (player && player.getCurrentTime) player.getCurrentTime();") { result ->
-                    val sec = result?.toFloatOrNull() ?: 0f
+                webView?.evaluateJavascript("if (player && player.getCurrentTime) player.getCurrentTime();") { res ->
+                    val clean = res?.replace("\"", "")?.trim()
+                    val sec = clean?.toFloatOrNull() ?: 0f
                     if (sec > 0f) {
                         _currentPositionMs.value = (sec * 1000L).toLong()
                     }
                 }
-                webView?.evaluateJavascript("if (player && player.getDuration) player.getDuration();") { result ->
-                    val dur = result?.toFloatOrNull() ?: 0f
+                webView?.evaluateJavascript("if (player && player.getDuration) player.getDuration();") { res ->
+                    val clean = res?.replace("\"", "")?.trim()
+                    val dur = clean?.toFloatOrNull() ?: 0f
                     if (dur > 0f) {
                         _durationMs.value = (dur * 1000L).toLong()
                     }
@@ -87,7 +89,8 @@ class YouTubeAudioWebView(context: Context) {
         }
 
         webView = wv
-        loadPlayerHtml(currentVideoId ?: "utwMHfDZ6SA")
+        val defaultId: String = currentVideoId ?: "utwMHfDZ6SA"
+        loadPlayerHtml(defaultId)
         return wv
     }
 
@@ -145,7 +148,7 @@ class YouTubeAudioWebView(context: Context) {
             </html>
         """.trimIndent()
 
-        wv.loadDataWithBaseURL("https://music.youtube.com", html, "text/html", "UTF-8", null)
+        wv.loadDataWithBaseURL("https://music.youtube.com", html, "text/html", "UTF-8", "https://music.youtube.com")
     }
 
     fun playTrack(videoId: String, startPositionMs: Long = 0L) {
