@@ -22,9 +22,7 @@ import kotlinx.coroutines.flow.asStateFlow
 @SuppressLint("SetJavaScriptEnabled")
 class YouTubeAudioWebView(context: Context) {
 
-    private val tag = "YTAudioWebView"
     private val mainHandler = Handler(Looper.getMainLooper())
-
     private var webView: WebView? = null
 
     private val _isPlaying = MutableStateFlow(false)
@@ -62,34 +60,31 @@ class YouTubeAudioWebView(context: Context) {
     }
 
     fun createAndAttachWebView(activityContext: Context): WebView {
-        val wv = WebView(activityContext).apply {
-            layoutParams = ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-            )
+        val wv = WebView(activityContext)
+        wv.layoutParams = ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        )
 
-            settings.apply {
-                javaScriptEnabled = true
-                mediaPlaybackRequiresUserGesture = false // Критично для мгновенного автозапуска
-                domStorageEnabled = true
-                databaseEnabled = true
-                allowFileAccess = true
-                mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-                userAgentString = "Mozilla/5.0 (Linux; Android 14; Infinix X6833B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Mobile Safari/537.36"
-            }
+        wv.settings.javaScriptEnabled = true
+        wv.settings.mediaPlaybackRequiresUserGesture = false
+        wv.settings.domStorageEnabled = true
+        wv.settings.databaseEnabled = true
+        wv.settings.allowFileAccess = true
+        wv.settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+        wv.settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; Infinix X6833B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Mobile Safari/537.36"
 
-            addJavascriptInterface(AndroidJsBridge(), "AndroidBridge")
-            webChromeClient = WebChromeClient()
-            webViewClient = object : WebViewClient() {
-                override fun onPageFinished(view: WebView?, url: String?) {
-                    super.onPageFinished(view, url)
-                    Log.i(tag, "HTML5 Player WebView страница загружена")
-                }
+        wv.addJavascriptInterface(AndroidJsBridge(), "AndroidBridge")
+        wv.webChromeClient = WebChromeClient()
+        wv.webViewClient = object : WebViewClient() {
+            override fun onPageFinished(view: WebView?, url: String?) {
+                super.onPageFinished(view, url)
+                Log.i(TAG, "HTML5 Player WebView загружен")
             }
         }
 
         webView = wv
-        val defaultId: String = currentVideoId ?: "utwMHfDZ6SA"
+        val defaultId = currentVideoId ?: "utwMHfDZ6SA"
         loadPlayerHtml(defaultId)
         return wv
     }
@@ -148,7 +143,7 @@ class YouTubeAudioWebView(context: Context) {
             </html>
         """.trimIndent()
 
-        wv.loadDataWithBaseURL("https://music.youtube.com", html, "text/html", "UTF-8", null as String?)
+        wv.loadDataWithBaseURL("https://music.youtube.com", html, "text/html", "UTF-8", null)
     }
 
     fun playTrack(videoId: String, startPositionMs: Long = 0L) {
@@ -203,7 +198,7 @@ class YouTubeAudioWebView(context: Context) {
         fun onReady() {
             mainHandler.post {
                 isApiReady = true
-                Log.i(tag, "JS Bridge: Player onReady! Запускаем воспроизведение.")
+                Log.i(TAG, "JS Bridge: Player onReady! Запускаем воспроизведение.")
                 _isPlaying.value = true
                 mainHandler.post(progressRunnable)
             }
@@ -229,8 +224,12 @@ class YouTubeAudioWebView(context: Context) {
         @JavascriptInterface
         fun onError(errorCode: Int) {
             mainHandler.post {
-                Log.e(tag, "JS Bridge Error: код $errorCode")
+                Log.e(TAG, "JS Bridge Error: код $errorCode")
             }
         }
+    }
+
+    companion object {
+        private const val TAG = "YTAudioWebView"
     }
 }
