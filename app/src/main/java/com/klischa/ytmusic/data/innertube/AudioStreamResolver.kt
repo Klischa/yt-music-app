@@ -3,6 +3,7 @@ package com.klischa.ytmusic.data.innertube
 import android.content.Context
 import android.util.Log
 import com.google.gson.JsonArray
+import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.klischa.ytmusic.data.auth.UserAccountManager
@@ -67,7 +68,7 @@ class AudioStreamResolver(
             Log.w(tag, "Strategy 3 ошибка: ${e.message}")
         }
 
-        Result.failure(IOException("Не удалось получить ссылку на аудиопоток. Пожалуйста, выполните вход в аккаунт через кнопку входа."))
+        Result.failure(IOException("Не удалось получить ссылку на аудиопоток. Пожалуйста, выполните вход в аккаунт через кнопку профиля 👤 в правом верхнем углу."))
     }
 
     private fun tryInnerTubeWebRemix(videoId: String): StreamInfo? {
@@ -105,7 +106,7 @@ class AudioStreamResolver(
             requestBuilder.header("Cookie", cookies)
         }
 
-        val authHeader = accountManager.generateSapisidHash()
+        val authHeader = accountManager.generateSapisidHash("https://music.youtube.com")
         if (!authHeader.isNullOrEmpty()) {
             requestBuilder.header("Authorization", authHeader)
             requestBuilder.header("X-Origin", "https://music.youtube.com")

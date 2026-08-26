@@ -6,7 +6,6 @@ import android.graphics.Bitmap
 import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
-import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
@@ -19,6 +18,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -51,6 +52,20 @@ fun LoginScreen(
 
     val loginUrl = "https://accounts.google.com/ServiceLogin?service=youtube&uilel=3&continue=https%3A%2F%2Fmusic.youtube.com%2F"
 
+    fun syncAndSaveCookies(): Boolean {
+        val cm = CookieManager.getInstance()
+        val ytm = cm.getCookie("https://music.youtube.com") ?: ""
+        val yt = cm.getCookie("https://www.youtube.com") ?: ""
+        val g = cm.getCookie("https://accounts.google.com") ?: ""
+        val combined = "$ytm; $yt; $g".trim().trim(';').trim()
+
+        if (combined.isNotEmpty() && (combined.contains("SAPISID") || combined.contains("__Secure-3PAPISID") || combined.contains("LOGIN_INFO") || combined.contains("SID"))) {
+            accountManager.saveCookies(combined, "YouTube Music Аккаунт")
+            return true
+        }
+        return false
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -78,6 +93,20 @@ fun LoginScreen(
                     .weight(1f)
                     .padding(start = 8.dp)
             )
+
+            Button(
+                onClick = {
+                    if (syncAndSaveCookies()) {
+                        Toast.makeText(context, "Авторизация сохранена!", Toast.LENGTH_SHORT).show()
+                        onLoginSuccess()
+                    } else {
+                        Toast.makeText(context, "Пожалуйста, завершите вход в аккаунт", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = RedPrimary)
+            ) {
+                Text("Готово")
+            }
         }
 
         Box(modifier = Modifier.fillMaxSize()) {
@@ -104,16 +133,15 @@ fun LoginScreen(
                             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                                 super.onPageStarted(view, url, favicon)
                                 isLoading = true
+                                if (syncAndSaveCookies()) {
+                                    onLoginSuccess()
+                                }
                             }
 
                             override fun onPageFinished(view: WebView?, url: String?) {
                                 super.onPageFinished(view, url)
                                 isLoading = false
-
-                                // Проверяем наличие авторизационных cookies сессии
-                                val cookies = cookieManager.getCookie("https://music.youtube.com")
-                                if (!cookies.isNullOrEmpty() && (cookies.contains("SAPISID") || cookies.contains("__Secure-3PAPISID") || cookies.contains("LOGIN_INFO"))) {
-                                    accountManager.saveCookies(cookies, "YouTube Music Аккаунт")
+                                if (syncAndSaveCookies()) {
                                     Toast.makeText(ctx, "Авторизация успешна! Доступ к аудиопотокам открыт.", Toast.LENGTH_LONG).show()
                                     onLoginSuccess()
                                 }

@@ -3,15 +3,16 @@ package com.klischa.ytmusic.data.auth
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
+import android.webkit.CookieManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.security.MessageDigest
 
 /**
- * Управляет авторизацией пользователя в YouTube Music, хранением Cookie и генерацией SAPISIDHASH.
+ * Управляет авторизацией пользователя в YouTube Music, сессионными Cookie и криптографической подписью SAPISIDHASH.
  */
-class UserAccountManager private constructor(context: Context) {
+class UserAccountManager private constructor(private val context: Context) {
 
     private val tag = "UserAccountManager"
     private val prefs: SharedPreferences = context.getSharedPreferences("yt_music_auth_prefs", Context.MODE_PRIVATE)
@@ -23,9 +24,20 @@ class UserAccountManager private constructor(context: Context) {
     val userAccountName: StateFlow<String?> = _userAccountName.asStateFlow()
 
     init {
+        checkLoginStatus()
+    }
+
+    fun checkLoginStatus() {
         val cookies = getSavedCookies()
-        _isLoggedIn.value = !cookies.isNullOrEmpty() && (cookies.contains("SAPISID") || cookies.contains("__Secure-3PAPISID"))
-        _userAccountName.value = prefs.getString(KEY_USER_NAME, null)
+        val hasAuthCookie = !cookies.isNullOrEmpty() && (
+            cookies.contains("SAPISID") ||
+            cookies.contains("__Secure-3PAPISID") ||
+            cookies.contains("__Secure-1PAPISID") ||
+            cookies.contains("LOGIN_INFO") ||
+            cookies.contains("SID")
+        )
+        _isLoggedIn.value = hasAuthCookie
+        _userAccountName.value = prefs.getString(KEY_USER_NAME, if (hasAuthCookie) "Google Аккаунт" else null)
     }
 
     fun saveCookies(cookies: String, accountName: String? = null) {
@@ -36,13 +48,24 @@ class UserAccountManager private constructor(context: Context) {
             }
             apply()
         }
-        _isLoggedIn.value = true
-        _userAccountName.value = accountName
-        Log.i(tag, "Успешно сохранены Cookies сессии YouTube Music")
+        checkLoginStatus()
+        Log.i(tag, "Сохранены Cookies авторизации YouTube Music (длина: ${cookies.length})")
     }
 
     fun getSavedCookies(): String? {
-        return prefs.getString(KEY_COOKIES, null)
+        val saved = prefs.getString(KEY_COOKIES, null)
+        if (!saved.isNullOrEmpty()) return saved
+
+        return try {
+            val cm = CookieManager.getInstance()
+            val ytm = cm.getCookie("https://music.youtube.com") ?: ""
+            val yt = cm.getCookie("https://www.youtube.com") ?: ""
+            val g = cm.getCookie("https://accounts.google.com") ?: ""
+            val combined = "$ytm; $yt; $g".trim().trim(';').trim()
+            if (combined.isNotEmpty()) combined else null
+        } catch (e: Exception) {
+            null
+        }
     }
 
     fun getSapisid(): String? {
@@ -50,10 +73,14 @@ class UserAccountManager private constructor(context: Context) {
         val parts = cookies.split(";")
         for (part in parts) {
             val trimmed = part.trim()
-            if (trimmed.startsWith("SAPISID=") || trimmed.startsWith("__Secure-3PAPISID=")) {
+            if (trimmed.startsWith("SAPISID=") ||
+                trimmed.startsWith("__Secure-3PAPISID=") ||
+                trimmed.startsWith("__Secure-1PAPISID=")
+            ) {
                 val idx = trimmed.indexOf("=")
                 if (idx != -1) {
-                    return trimmed.substring(idx + 1)
+                    val value = trimmed.substring(idx + 1).trim()
+                    if (value.isNotEmpty()) return value
                 }
             }
         }
@@ -81,6 +108,10 @@ class UserAccountManager private constructor(context: Context) {
 
     fun logout() {
         prefs.edit().clear().apply()
+        try {
+            CookieManager.getInstance().removeAllCookies(null)
+            CookieManager.getInstance().flush()
+        } catch (ignored: Exception) {}
         _isLoggedIn.value = false
         _userAccountName.value = null
         Log.i(tag, "Пользователь вышел из аккаунта")

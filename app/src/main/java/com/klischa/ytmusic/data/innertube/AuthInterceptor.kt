@@ -21,7 +21,7 @@ class AuthInterceptor(private val context: Context) : Interceptor {
             requestBuilder.header("Cookie", cookies)
         }
 
-        val authHeader = accountManager.generateSapisidHash()
+        val authHeader = accountManager.generateSapisidHash("https://music.youtube.com")
         if (!authHeader.isNullOrEmpty()) {
             requestBuilder.header("Authorization", authHeader)
             requestBuilder.header("X-Origin", "https://music.youtube.com")
@@ -29,6 +29,8 @@ class AuthInterceptor(private val context: Context) : Interceptor {
 
         requestBuilder.header("Origin", "https://music.youtube.com")
         requestBuilder.header("Referer", "https://music.youtube.com/")
+        requestBuilder.header("X-YouTube-Client-Name", "67")
+        requestBuilder.header("X-YouTube-Client-Version", "1.20240401.01.00")
 
         return chain.proceed(requestBuilder.build())
     }
