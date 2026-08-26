@@ -121,6 +121,9 @@ fun MainContent(
     val progressMs by playerViewModel.currentPositionMs.collectAsState()
     val durationMs by playerViewModel.durationMs.collectAsState()
     val isFullPlayerOpen by playerViewModel.isFullPlayerExpanded.collectAsState()
+    val lyricsResult by playerViewModel.lyrics.collectAsState()
+    val isLyricsLoading by playerViewModel.isLyricsLoading.collectAsState()
+    val queue by playerViewModel.queue.collectAsState()
 
     Scaffold(
         topBar = {
@@ -307,7 +310,7 @@ fun MainContent(
             }
         }
 
-        // Полноэкранный плеер
+        // Полноэкранный плеер с караоке-текстом и очередью
         if (isFullPlayerOpen && currentTrack != null) {
             Dialog(
                 onDismissRequest = { playerViewModel.setFullPlayerExpanded(false) },
@@ -318,6 +321,12 @@ fun MainContent(
                     isPlaying = isPlaying,
                     progressMs = progressMs,
                     durationMs = durationMs,
+                    lyricsResult = lyricsResult,
+                    isLyricsLoading = isLyricsLoading,
+                    queue = queue,
+                    onTrackSelect = { selectedTrack ->
+                        playerViewModel.playTrack(selectedTrack, queue)
+                    },
                     onCloseClick = { playerViewModel.setFullPlayerExpanded(false) },
                     onPlayPauseClick = { playerViewModel.togglePlayPause() },
                     onSeek = { playerViewModel.seekTo(it) },

@@ -15,6 +15,8 @@ import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
 import com.klischa.ytmusic.data.downloader.MusicDownloadManager
 import com.klischa.ytmusic.data.innertube.InnerTubeRepositoryImpl
+import com.klischa.ytmusic.data.innertube.WatchNextRepository
+import com.klischa.ytmusic.data.lyrics.LyricsService
 import com.klischa.ytmusic.data.service.PlaybackService
 import com.klischa.ytmusic.data.service.YouTubeAudioWebView
 import com.klischa.ytmusic.domain.model.DownloadState
@@ -32,6 +34,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val repository = InnerTubeRepositoryImpl(application)
     private val downloadManager = MusicDownloadManager(application, repository)
     private val audioWebView = YouTubeAudioWebView(application)
+    private val lyricsService = LyricsService()
+    private val watchNextRepo = WatchNextRepository(application)
 
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var mediaController: MediaController? = null
@@ -53,6 +57,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private val _isFullPlayerExpanded = MutableStateFlow(false)
     val isFullPlayerExpanded: StateFlow<Boolean> = _isFullPlayerExpanded.asStateFlow()
+
+    private val _lyrics = MutableStateFlow<LyricsService.LyricsResult?>(null)
+    val lyrics: StateFlow<LyricsService.LyricsResult?> = _lyrics.asStateFlow()
+
+    private val _isLyricsLoading = MutableStateFlow(false)
+    val isLyricsLoading: StateFlow<Boolean> = _isLyricsLoading.asStateFlow()
 
     val downloadStates: StateFlow<Map<String, DownloadState>> = downloadManager.downloadStates
 
@@ -132,8 +142,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun playTrack(track: Track, newQueue: List<Track> = listOf(track)) {
         _currentTrack.value = track
         _queue.value = newQueue
+        _lyrics.value = null
 
-        // 1. Если трек уже скачан локально — воспроизводим через ExoPlayer
+        loadLyrics(track)
+        loadWatchNext(track)
+
         if (track.localUri != null) {
             isPlayingLocalFile = true
             audioWebView.pause()
@@ -141,12 +154,35 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             return
         }
 
-        // 2. Для онлайн-треков запускаем потоковое воспроизведение через HTML5 Audio Engine
         isPlayingLocalFile = false
         mediaController?.pause()
         _durationMs.value = (track.durationSeconds * 1000L).coerceAtLeast(1000L)
         audioWebView.playTrack(track.id)
         _isPlaying.value = true
+    }
+
+    private fun loadLyrics(track: Track) {
+        viewModelScope.launch {
+            _isLyricsLoading.value = true
+            val res = lyricsService.getLyrics(track.title, track.artist)
+            _lyrics.value = res
+            _isLyricsLoading.value = false
+        }
+    }
+
+    private fun loadWatchNext(track: Track) {
+        viewModelScope.launch {
+            val result = watchNextRepo.getWatchNext(track.id)
+            if (result.upNextTracks.isNotEmpty()) {
+                val currentList = _queue.value.toMutableList()
+                for (nextTrack in result.upNextTracks) {
+                    if (currentList.none { it.id == nextTrack.id }) {
+                        currentList.add(nextTrack)
+                    }
+                }
+                _queue.value = currentList
+            }
+        }
     }
 
     private fun startLocalPlayback(track: Track) {
