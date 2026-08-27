@@ -3,12 +3,11 @@ package com.klischa.ytmusic.presentation.viewmodel
 import android.app.Application
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import android.view.View
 import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.media3.common.MediaItem
-import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
@@ -19,7 +18,6 @@ import com.klischa.ytmusic.data.innertube.WatchNextRepository
 import com.klischa.ytmusic.data.local.PlaylistManager
 import com.klischa.ytmusic.data.lyrics.LyricsService
 import com.klischa.ytmusic.data.service.PlaybackService
-import com.klischa.ytmusic.data.service.YouTubeAudioWebView
 import com.klischa.ytmusic.domain.model.DownloadState
 import com.klischa.ytmusic.domain.model.LikeStatus
 import com.klischa.ytmusic.domain.model.Playlist
@@ -36,7 +34,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private val repository = InnerTubeRepositoryImpl(application)
     private val downloadManager = MusicDownloadManager(application, repository)
-    private val audioWebView = YouTubeAudioWebView(application)
     private val lyricsService = LyricsService()
     private val watchNextRepo = WatchNextRepository(application)
     val playlistManager = PlaylistManager.getInstance(application)
@@ -75,19 +72,23 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val likedTracks: StateFlow<List<Track>> = playlistManager.likedTracks
     val downloadStates: StateFlow<Map<String, DownloadState>> = downloadManager.downloadStates
 
-    private var isPlayingLocalFile = false
     private var progressJob: Job? = null
 
     init {
-        initMediaController()
-        observeAudioWebView()
+        startAndBindPlaybackService()
+        observeServiceAudioEngine()
     }
 
-    fun createAndAttachAudioPlayer(context: Context): View {
-        return audioWebView.createAndAttachWebView(context)
-    }
+    private fun startAndBindPlaybackService() {
+        val serviceIntent = Intent(getApplication(), PlaybackService::class.java)
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                getApplication<Application>().startForegroundService(serviceIntent)
+            } else {
+                getApplication<Application>().startService(serviceIntent)
+            }
+        } catch (ignored: Exception) {}
 
-    private fun initMediaController() {
         val sessionToken = SessionToken(
             getApplication(),
             ComponentName(getApplication(), PlaybackService::class.java)
@@ -96,56 +97,45 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         controllerFuture = MediaController.Builder(getApplication(), sessionToken).buildAsync()
         controllerFuture?.addListener({
             try {
-                val controller = controllerFuture?.get()
-                mediaController = controller
-                setupPlayerListener(controller)
+                mediaController = controllerFuture?.get()
             } catch (ignored: Exception) {}
         }, MoreExecutors.directExecutor())
     }
 
-    private fun observeAudioWebView() {
-        viewModelScope.launch {
-            audioWebView.isPlaying.collect { playing ->
-                if (!isPlayingLocalFile) {
-                    _isPlaying.value = playing
-                }
-            }
+    fun createAndAttachAudioPlayer(context: Context): View {
+        val service = PlaybackService.instance
+        if (service != null && service.audioWebView != null) {
+            return service.audioWebView!!.createAndAttachWebView(context)
         }
-        viewModelScope.launch {
-            audioWebView.currentPositionMs.collect { pos ->
-                if (!isPlayingLocalFile) {
-                    _currentPositionMs.value = pos
-                }
-            }
-        }
-        viewModelScope.launch {
-            audioWebView.durationMs.collect { dur ->
-                if (!isPlayingLocalFile && dur > 0) {
-                    _durationMs.value = dur
-                }
-            }
-        }
+        val fallback = com.klischa.ytmusic.data.service.YouTubeAudioWebView(context)
+        return fallback.createAndAttachWebView(context)
     }
 
-    private fun setupPlayerListener(controller: MediaController?) {
-        controller?.addListener(object : Player.Listener {
-            override fun onIsPlayingChanged(isPlaying: Boolean) {
-                if (isPlayingLocalFile) {
-                    _isPlaying.value = isPlaying
-                    if (isPlaying) {
-                        startProgressTracking()
-                    } else {
-                        stopProgressTracking()
+    private fun observeServiceAudioEngine() {
+        viewModelScope.launch {
+            while (isActive) {
+                val service = PlaybackService.instance
+                if (service != null && service.audioWebView != null) {
+                    service.setQueueNavigationListeners(
+                        onPrev = { skipPrevious() },
+                        onNext = { skipNext() }
+                    )
+                    launch {
+                        service.audioWebView!!.isPlaying.collect { _isPlaying.value = it }
                     }
+                    launch {
+                        service.audioWebView!!.currentPositionMs.collect { _currentPositionMs.value = it }
+                    }
+                    launch {
+                        service.audioWebView!!.durationMs.collect { dur ->
+                            if (dur > 0) _durationMs.value = dur
+                        }
+                    }
+                    break
                 }
+                delay(300)
             }
-
-            override fun onPlaybackStateChanged(playbackState: Int) {
-                if (isPlayingLocalFile && playbackState == Player.STATE_READY) {
-                    _durationMs.value = controller.duration.coerceAtLeast(0L)
-                }
-            }
-        })
+        }
     }
 
     fun playTrack(track: Track, newQueue: List<Track> = listOf(track)) {
@@ -153,22 +143,22 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _queue.value = newQueue
         _lyrics.value = null
         _currentTrackLikeStatus.value = playlistManager.getLikeStatus(track.id)
+        _durationMs.value = (track.durationSeconds * 1000L).coerceAtLeast(1000L)
+        _isPlaying.value = true
 
         loadLyrics(track)
         loadWatchNext(track)
 
-        if (track.localUri != null) {
-            isPlayingLocalFile = true
-            audioWebView.pause()
-            startLocalPlayback(track)
-            return
+        val service = PlaybackService.instance
+        if (service != null) {
+            service.startPlayingTrack(track)
+        } else {
+            startAndBindPlaybackService()
+            viewModelScope.launch {
+                delay(500)
+                PlaybackService.instance?.startPlayingTrack(track)
+            }
         }
-
-        isPlayingLocalFile = false
-        mediaController?.pause()
-        _durationMs.value = (track.durationSeconds * 1000L).coerceAtLeast(1000L)
-        audioWebView.playTrack(track.id)
-        _isPlaying.value = true
     }
 
     fun toggleLike(track: Track) {
@@ -234,34 +224,20 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    private fun startLocalPlayback(track: Track) {
-        val controller = mediaController ?: return
-        val mediaItem = track.toMediaItem()
-        controller.setMediaItem(mediaItem)
-        controller.prepare()
-        controller.play()
-    }
-
     fun togglePlayPause() {
-        if (isPlayingLocalFile) {
-            val controller = mediaController ?: return
-            if (controller.isPlaying) {
-                controller.pause()
-            } else {
-                controller.play()
-            }
+        val service = PlaybackService.instance
+        if (_isPlaying.value) {
+            service?.pausePlayback()
+            _isPlaying.value = false
         } else {
-            audioWebView.togglePlayPause()
+            service?.resumePlayback()
+            _isPlaying.value = true
         }
     }
 
     fun seekTo(positionMs: Long) {
-        if (isPlayingLocalFile) {
-            mediaController?.seekTo(positionMs)
-        } else {
-            audioWebView.seekTo(positionMs)
-        }
         _currentPositionMs.value = positionMs
+        PlaybackService.instance?.seekTo(positionMs)
     }
 
     fun skipNext() {
@@ -297,29 +273,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    private fun startProgressTracking() {
-        progressJob?.cancel()
-        progressJob = viewModelScope.launch {
-            while (isActive) {
-                mediaController?.let { controller ->
-                    _currentPositionMs.value = controller.currentPosition
-                    _durationMs.value = controller.duration.coerceAtLeast(0L)
-                }
-                delay(500)
-            }
-        }
-    }
-
-    private fun stopProgressTracking() {
-        progressJob?.cancel()
-        progressJob = null
-    }
-
     override fun onCleared() {
         super.onCleared()
         controllerFuture?.let { MediaController.releaseFuture(it) }
         mediaController = null
-        audioWebView.release()
-        stopProgressTracking()
+        progressJob?.cancel()
     }
 }
